@@ -34,8 +34,8 @@ class Pipeline:
                 first_token_ms = (time.perf_counter() - start) * 1000.0
             reply_parts.append(chunk)
         total_ms = (time.perf_counter() - start) * 1000.0
-        t.mark("llm_first_token", first_token_ms or total_ms)
-        t.mark("llm_total", total_ms)
+        t.mark_info("llm_first_token", first_token_ms or total_ms)
+        t.mark("llm", total_ms)
         reply = "".join(reply_parts).strip()
         self.history.append({"role": "assistant", "content": reply})
         return reply

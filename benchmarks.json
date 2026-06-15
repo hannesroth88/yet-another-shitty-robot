@@ -1,0 +1,56 @@
+{
+  "schema": [
+    "date", "environment", "accel",
+    "stt_config", "stt_ms",
+    "llm_model", "llm_quant", "llm_first_token_ms", "llm_ms",
+    "tts_config", "tts_ms",
+    "total_ms", "notes"
+  ],
+  "records": [
+    {
+      "date": "2026-06-12",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper base int8",
+      "stt_ms": 629,
+      "llm_model": "llama3.2 (3.2B)",
+      "llm_quant": "Q4_K_M",
+      "llm_first_token_ms": 146,
+      "llm_ms": 272,
+      "tts_config": "say (Samantha)",
+      "tts_ms": 676,
+      "total_ms": 1577,
+      "notes": "Phase 0 warm run. Prompt synthesized via say."
+    },
+    {
+      "date": "2026-06-12",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper base int8",
+      "stt_ms": 731,
+      "llm_model": "llama3.2 (3.2B)",
+      "llm_quant": "Q4_K_M",
+      "llm_first_token_ms": 137,
+      "llm_ms": 262,
+      "tts_config": "say (Samantha)",
+      "tts_ms": 676,
+      "total_ms": 1668,
+      "notes": "Phase 0 warm run (repeat)."
+    },
+    {
+      "date": "2026-06-12",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper base int8",
+      "stt_ms": 690,
+      "llm_model": "llama3.2 (3.2B)",
+      "llm_quant": "Q4_K_M",
+      "llm_first_token_ms": 2216,
+      "llm_ms": 2392,
+      "tts_config": "say (Samantha)",
+      "tts_ms": 859,
+      "total_ms": 3941,
+      "notes": "Phase 0 COLD run (model load). Shows warmup cost."
+    }
+  ]
+}

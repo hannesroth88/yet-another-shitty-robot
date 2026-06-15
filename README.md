@@ -70,6 +70,31 @@ bot: The capital of France is Paris.
 latency: stt 569ms | llm_first_token 200ms | llm_total 276ms | tts 667ms | TOTAL 1712ms
 ```
 
+## Latency benchmark log
+
+We track latency per environment and try to improve it over time.
+
+- **Source of truth:** `benchmarks.json` (append a record, or use `--record`).
+- **Report:** `benchmarks.html` — self-contained, sortable, highlights fastest
+  (green) / slowest (red) per column, filter by environment, best-total cards.
+  Regenerate after editing the JSON:
+
+```bash
+.venv/bin/python -m tools.bench_report   # benchmarks.json -> benchmarks.html
+open benchmarks.html
+```
+
+- **Auto-record a measured run** (appends to JSON + regenerates HTML):
+
+```bash
+.venv/bin/python -m tools.smoke "prompt" --record "Gaming PC"
+# then set llm_quant in benchmarks.json (e.g. Q4_K_M) since Ollama doesn't report it via API
+```
+
+Columns: Environment · Accel · STT Config · STT ms · LLM Model · Quant ·
+LLM 1st-token ms · LLM ms · TTS Config · TTS ms · TOTAL ms · Notes. TOTAL is
+real end-to-end (STT + LLM + TTS); first-token is informational.
+
 ## Configuration
 
 All knobs live in `env.example` (copy to `.env`). Highlights:

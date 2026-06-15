@@ -49,7 +49,7 @@ embedded device + a physical robot.
 
 | Host | Role | CPU | RAM | GPU / Accel | Storage | Arch | Notes |
 |------|------|-----|-----|-------------|---------|------|-------|
-| **Mac Pro M1** (work) | Dev / Phase-0 host | Apple M1 Pro (16") | 32 GB | M1 GPU + ANE (Metal) | — | arm64 | Current dev machine. Use Metal / MPS. |
+| **Mac Pro M1** | Dev / Phase-0 host | Apple M1 Pro (16") | 32 GB | M1 GPU + ANE (Metal) | — | arm64 | Current dev machine. Use Metal / MPS. |
 | **Gaming PC** | On-demand LLM/GPU | Ryzen 5 5600X | 32 GB DDR4-3600 | **RTX 2080, 8 GB VRAM (CUDA)** | 2 TB NVMe | x86_64 | Wake-on-LAN target. Runs Ollama/LLM only when needed. |
 | **Intel NUC 10** | Home Assistant + orchestrator | Core i5-10210U | 32 GB DDR4-2666 | iGPU only | 1 TB NVMe | x86_64 | Runs Home Assistant. Always-on, low power. Good for STT/TTS + glue. |
 | **TrueNAS server** | Storage / always-on services | ASRock N100 | 32 GB DDR4-3200 | iGPU only (low TDP) | 12 TB HDD + 500 GB NVMe | x86_64 | NAS, model storage, light containers. PoE switch for cameras/devices. |
