@@ -108,6 +108,39 @@ rest of the pipeline doesn't know or care whether the model is local or remote.
   different hosts and swap implementations.
 - **Latency logging** is a first-class feature, not an afterthought.
 
+## Latency benchmark log
+
+**What it is:** a living record of pipeline latency per hardware environment,
+so we can compare hosts and track improvement over time. This is the concrete
+expression of the "Measure latency" design principle and the data that drives
+fleet-placement decisions (e.g. is the Gaming PC's GPU worth waking vs running
+the LLM locally on the NUC/Mac?).
+
+**What it's for:**
+- Compare environments side by side (Mac M1 vs Gaming PC vs NUC vs TrueNAS).
+- See where the time goes per turn (STT vs LLM vs TTS) so we optimize the right
+  stage on each host.
+- Weigh model/quant trade-offs (e.g. 3B Q4 vs 7B Q4 on 8 GB VRAM) against latency.
+- Expose warmup/cold-start cost — relevant to the Wake-on-LAN strategy.
+
+**How it works:**
+- `benchmarks.json` is the source of truth (one record per run).
+- `tools/bench_report.py` regenerates a self-contained `benchmarks.html`
+  (sortable, highlights fastest/slowest per column, filter by environment,
+  best-total cards). Works offline from `file://`.
+- `tools/smoke.py "prompt" --record "<Environment>"` measures a run and appends
+  it to the JSON + regenerates the HTML. Set `llm_quant` by hand afterward
+  (Ollama doesn't report it over the API).
+
+**Columns:** Date · Environment · Accel · STT Config · STT ms · LLM Model ·
+Quant · LLM 1st-token ms · LLM ms · TTS Config · TTS ms · TOTAL ms · Notes.
+TOTAL is real end-to-end (STT + LLM + TTS); LLM first-token is informational
+(a subset of LLM time, not added into the total).
+
+**Workflow:** when testing a new host or swapping a component, run `--record`
+for that environment and commit the updated `benchmarks.json` + `benchmarks.html`.
+Keep trying to lower the per-environment best total.
+
 ## Open questions / decisions to revisit
 
 - Final STT engine (whisper.cpp vs faster-whisper) per host.
