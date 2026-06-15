@@ -23,6 +23,9 @@ def _make_backend() -> TTS:
     if config.tts_backend == "piper":
         from .piper_tts import PiperTTS
         return PiperTTS()
+    if config.tts_backend == "kokoro":
+        from .kokoro_tts import KokoroTTS
+        return KokoroTTS()
     raise ValueError(f"Unknown TTS_BACKEND: {config.tts_backend}")
 
 

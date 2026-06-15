@@ -3,3 +3,7 @@ faster-whisper>=1.0.0
 # Optional cross-platform TTS (fleet default). On macOS, the `say` backend needs
 # nothing; install piper-tts on Linux fleet hosts or use a prebuilt piper binary.
 # piper-tts>=1.2.0
+
+# Optional: German Kokoro "Martin" TTS backend (TTS_BACKEND=kokoro)
+# kokoro-onnx
+# huggingface_hub

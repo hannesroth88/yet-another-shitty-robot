@@ -62,6 +62,12 @@ class Config:
     say_voice: str = _get("SAY_VOICE", "Anna")
     piper_bin: str = _get("PIPER_BIN", "piper")
     piper_voice: str = _get("PIPER_VOICE", "voices/de_DE-thorsten-high.onnx")
+    # Kokoro German "Martin" (ONNX). Files from Godelaune/Kokoro-82M-ONNX-German-Martin.
+    kokoro_model: str = _get("KOKORO_MODEL", "voices/kokoro-martin.onnx")
+    kokoro_voices: str = _get("KOKORO_VOICES", "voices/voices-martin.npz")
+    kokoro_voice: str = _get("KOKORO_VOICE", "martin")
+    kokoro_speed: float = float(_get("KOKORO_SPEED", "1.0"))
+    kokoro_lang: str = _get("KOKORO_LANG", "de")
 
     # Voice effect (DSP applied on top of any TTS backend)
     tts_effect: str = _get("TTS_EFFECT", "none")  # none | robot

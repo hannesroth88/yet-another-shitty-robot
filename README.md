@@ -108,7 +108,7 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
 | `STT_BACKEND` / `STT_MODEL` | `faster-whisper` / `base` | `tiny`/`base`/`small`/`medium` |
 | `LLM_BACKEND` / `LLM_MODEL` | `ollama` / `llama3.2:latest` | any Ollama model |
 | `OLLAMA_HOST` | `http://localhost:11434` | point at a remote host later (e.g. woken Gaming PC) |
-| `TTS_BACKEND` | `say` | `say` (mac) or `piper` (fleet) |
+| `TTS_BACKEND` | `say` | `say` (mac), `piper` (fleet), or `kokoro` (German Martin) |
 
 ## Swapping components (preview of later phases)
 
@@ -127,6 +127,21 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
 
   `PIPER_VOICE` already defaults to `voices/de_DE-thorsten-high.onnx`. Run with
   the venv active so the `piper` CLI is on `PATH`.
+- **Use Kokoro German "Martin" TTS** (82M ONNX, often more natural German than
+  Piper): install `kokoro-onnx` and fetch the model, then set
+  `TTS_BACKEND=kokoro`.
+
+  ```bash
+  .venv/bin/pip install kokoro-onnx huggingface_hub
+  .venv/bin/python -m utils.fetch_kokoro   # -> voices/kokoro-martin.onnx + voices-martin.npz
+  ```
+
+  Uses the `kokoro-onnx` runtime (not the `kokoro` KPipeline, which has no
+  German voice). Model files come from
+  `Godelaune/Kokoro-82M-ONNX-German-Martin`. `KOKORO_*` vars (model, voices,
+  voice name, speed, lang) are in `.env`. The robot effect below still applies
+  on top — `TTS_BACKEND=kokoro` + `TTS_EFFECT=robot` chains Kokoro → robot
+  filter.
 - **Bigger/smaller STT:** change `STT_MODEL`.
 
 ## Robot voice effect
@@ -135,6 +150,8 @@ The TTS output can be run through a local DSP layer (`src/tts/effects.py`,
 wrapped by `src/tts/robot_tts.py`) to give any backend a robot character. It is
 engine-agnostic and low-latency — the German always comes from the TTS voice;
 the robot sound is pure post-processing on top. Enable with `TTS_EFFECT=robot`.
+It works the same over `say`, `piper`, or `kokoro` (e.g. Kokoro Martin → robot
+filter is just `TTS_BACKEND=kokoro` + `TTS_EFFECT=robot`).
 
 Key knobs (all in `env.example` / `.env`):
 
