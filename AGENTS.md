@@ -18,7 +18,7 @@ embedded device + a physical robot.
 ### Roadmap (rough)
 
 1. **Phase 0 — Host prototype (DONE ✅):** STT→LLM→TTS working end-to-end on the
-   work Mac (M1) as a push-to-talk loop with per-stage latency. See `README.md`,
+   Mac (M1) as a push-to-talk loop with per-stage latency. See `README.md`,
    `src/`, run `python -m src.main` or `python -m tools.smoke`. ~1.7–2.1s/turn
    (faster-whisper base + Ollama llama3.2 + macOS `say`).
 2. **Phase 1 — Service split:** Break STT, LLM, TTS into swappable services

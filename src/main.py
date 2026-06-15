@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .audio import play_wav, record_push_to_talk
+from .audio import default_output_device, play_wav, record_push_to_talk
 from .config import config
 from .latency import Timings
 from .llm import get_llm
@@ -26,6 +26,7 @@ def banner() -> None:
     print(f" LLM : {config.llm_backend} ({config.llm_model})")
     print(f" TTS : {config.tts_backend}")
     print(f" Mic : avfoundation device :{config.audio_input_device}")
+    print(f" Out : {default_output_device()}  (afplay -> macOS default output)")
     print("=" * 64)
 
 

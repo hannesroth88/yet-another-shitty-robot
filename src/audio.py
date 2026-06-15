@@ -51,4 +51,24 @@ def record_push_to_talk(out_path: str) -> bool:
 
 
 def play_wav(path: str) -> None:
-    subprocess.run(["afplay", path], check=False)
+    # -v 1.0 = full volume. Plays to the macOS DEFAULT OUTPUT device.
+    subprocess.run(["afplay", "-v", "1.0", path], check=False)
+
+
+def default_output_device() -> str:
+    """Best-effort name of the current default audio OUTPUT device (for diagnostics)."""
+    try:
+        out = subprocess.run(
+            ["system_profiler", "SPAudioDataType"],
+            capture_output=True, text=True, timeout=8,
+        ).stdout
+    except Exception:
+        return "unknown"
+    name = "unknown"
+    for line in out.splitlines():
+        s = line.strip()
+        if s.endswith(":") and not s.startswith("Default"):
+            name = s[:-1]
+        if "Default Output Device: Yes" in s:
+            return name
+    return name
