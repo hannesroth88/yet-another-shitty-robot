@@ -44,7 +44,7 @@ class Config:
     stt_backend: str = _get("STT_BACKEND", "faster-whisper")
     stt_model: str = _get("STT_MODEL", "base")
     stt_compute_type: str = _get("STT_COMPUTE_TYPE", "int8")
-    stt_language: str = os.environ.get("STT_LANGUAGE", "") or None  # type: ignore[assignment]
+    stt_language: str = os.environ.get("STT_LANGUAGE", "de") or None  # type: ignore[assignment]
 
     # LLM
     llm_backend: str = _get("LLM_BACKEND", "ollama")
@@ -52,14 +52,25 @@ class Config:
     llm_model: str = _get("LLM_MODEL", "llama3.2:latest")
     system_prompt: str = _get(
         "SYSTEM_PROMPT",
-        "You are a concise, friendly voice assistant. Keep replies short and speakable.",
+        "Du bist ein knapper, freundlicher Sprachassistent. Antworte immer auf "
+        "Deutsch und halte deine Antworten kurz und gut vorlesbar. Verwende kein "
+        "Markdown, keine Listen und keine Emojis.",
     )
 
     # TTS
-    tts_backend: str = _get("TTS_BACKEND", "say")
-    say_voice: str = _get("SAY_VOICE", "Samantha")
+    tts_backend: str = _get("TTS_BACKEND", "piper")
+    say_voice: str = _get("SAY_VOICE", "Anna")
     piper_bin: str = _get("PIPER_BIN", "piper")
-    piper_voice: str = _get("PIPER_VOICE", "voices/en_US-amy-medium.onnx")
+    piper_voice: str = _get("PIPER_VOICE", "voices/de_DE-thorsten-high.onnx")
+
+    # Voice effect (DSP applied on top of any TTS backend)
+    tts_effect: str = _get("TTS_EFFECT", "none")  # none | robot
+    robot_carrier_hz: float = float(_get("ROBOT_CARRIER_HZ", "55"))
+    robot_mix: float = float(_get("ROBOT_MIX", "0.6"))
+    robot_tremolo_hz: float = float(_get("ROBOT_TREMOLO_HZ", "0"))
+    robot_tremolo_depth: float = float(_get("ROBOT_TREMOLO_DEPTH", "0"))
+    robot_comb_ms: float = float(_get("ROBOT_COMB_MS", "0"))
+    robot_comb_gain: float = float(_get("ROBOT_COMB_GAIN", "0"))
 
 
 config = Config()

@@ -111,8 +111,19 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
 
 - **Run the LLM on another host:** set `OLLAMA_HOST=http://gaming-pc:11434`.
   Nothing else changes. (Wake-on-LAN logic lands in the LLM backend in Phase 2.)
-- **Use Piper TTS** (cross-platform): set `TTS_BACKEND=piper`, install a piper
-  binary + a `.onnx` voice, point `PIPER_VOICE` at it.
+- **Use Piper TTS** (cross-platform, natural German voice): install Piper and
+  the German `thorsten-high` voice, then set `TTS_BACKEND=piper`.
+
+  ```bash
+  .venv/bin/pip install piper-tts
+  mkdir -p voices && cd voices
+  BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high
+  curl -sL -o de_DE-thorsten-high.onnx      $BASE/de_DE-thorsten-high.onnx
+  curl -sL -o de_DE-thorsten-high.onnx.json $BASE/de_DE-thorsten-high.onnx.json
+  ```
+
+  `PIPER_VOICE` already defaults to `voices/de_DE-thorsten-high.onnx`. Run with
+  the venv active so the `piper` CLI is on `PATH`.
 - **Bigger/smaller STT:** change `STT_MODEL`.
 
 ## Known Phase-0 limitations (intentional)

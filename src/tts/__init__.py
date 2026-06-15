@@ -16,7 +16,7 @@ class TTS(Protocol):
         ...
 
 
-def get_tts() -> TTS:
+def _make_backend() -> TTS:
     if config.tts_backend == "say":
         from .say_tts import SayTTS
         return SayTTS()
@@ -24,3 +24,14 @@ def get_tts() -> TTS:
         from .piper_tts import PiperTTS
         return PiperTTS()
     raise ValueError(f"Unknown TTS_BACKEND: {config.tts_backend}")
+
+
+def get_tts() -> TTS:
+    backend = _make_backend()
+    # Optional voice effect, applied on top of any backend (engine-agnostic).
+    if config.tts_effect == "robot":
+        from .robot_tts import RobotTTS
+        return RobotTTS(backend)
+    if config.tts_effect not in ("", "none"):
+        raise ValueError(f"Unknown TTS_EFFECT: {config.tts_effect}")
+    return backend
