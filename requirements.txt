@@ -1,0 +1,5 @@
+# Phase 0 prototype deps (Mac host). LLM uses Ollama HTTP (no client lib needed).
+faster-whisper>=1.0.0
+# Optional cross-platform TTS (fleet default). On macOS, the `say` backend needs
+# nothing; install piper-tts on Linux fleet hosts or use a prebuilt piper binary.
+# piper-tts>=1.2.0
