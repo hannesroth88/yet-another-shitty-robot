@@ -19,8 +19,11 @@ src/
   stt/  base interface + faster_whisper_stt.py
   llm/  base interface + ollama_llm.py
   tts/  base interface + say_tts.py (mac default) + piper_tts.py (fleet default)
+        effects.py + robot_tts.py  # optional robot-voice DSP layer
 tools/
   smoke.py         # non-interactive end-to-end test (no mic needed)
+utils/
+  voice_lab.py     # audition / tune the robot-voice effect (presets + live REPL)
 ```
 
 Each of STT / LLM / TTS is selected by a `*_BACKEND` env var and built by a
@@ -125,6 +128,46 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
   `PIPER_VOICE` already defaults to `voices/de_DE-thorsten-high.onnx`. Run with
   the venv active so the `piper` CLI is on `PATH`.
 - **Bigger/smaller STT:** change `STT_MODEL`.
+
+## Robot voice effect
+
+The TTS output can be run through a local DSP layer (`src/tts/effects.py`,
+wrapped by `src/tts/robot_tts.py`) to give any backend a robot character. It is
+engine-agnostic and low-latency — the German always comes from the TTS voice;
+the robot sound is pure post-processing on top. Enable with `TTS_EFFECT=robot`.
+
+Key knobs (all in `env.example` / `.env`):
+
+| Var | Default | Notes |
+|-----|---------|-------|
+| `TTS_EFFECT` | `none` | `none` or `robot` |
+| `ROBOT_PHASE_STRENGTH` | `0.9` | monotone "robotization" 0..1 (the main robot lever) |
+| `ROBOT_PHASE_HOP` | `150` | buzz pitch = `sample_rate / hop`; smaller = higher/tinier |
+| `ROBOT_PHASE_FORMANT` | `1.4` | formant shift; `>1` = smaller/daintier "tiny robot" voice |
+| `ROBOT_PHASE_LOWPASS_HZ` | `5000` | smooths the robotization (removes crackle); lower = mellower |
+| `ROBOT_CARRIER_HZ` / `ROBOT_MIX` | `0` / `0` | ring modulation (metallic buzz) |
+| `ROBOT_BITS` / `ROBOT_RATE_DIV` | `0` / `1` | bit-crusher (digital lo-fi grit) |
+| `ROBOT_TREMOLO_HZ` / `ROBOT_TREMOLO_DEPTH` | `16` / `0.25` | mechanical amplitude pulse |
+| `ROBOT_COMB_MS` / `ROBOT_COMB_GAIN` | `0` / `0` | short comb = metallic tin-can resonance |
+
+### Auditioning / tuning — `utils/voice_lab.py`
+
+A standalone tool to find your sound without touching the loop. It synthesizes
+German text with the configured TTS backend, applies the robot effect, and plays
+it. Ships with presets (`dry`, `classic`, `android`, `computer`, `dalek`,
+`mechanical`, `tiny`) and lets you override any parameter or tune live.
+
+```bash
+.venv/bin/python -m utils.voice_lab "Hallo Welt" --preset tiny   # one preset
+.venv/bin/python -m utils.voice_lab --all                        # compare all presets
+.venv/bin/python -m utils.voice_lab --formant 1.5 --hop 130       # override params
+.venv/bin/python -m utils.voice_lab -i                            # interactive REPL
+.venv/bin/python -m utils.voice_lab "Test" --save out.wav         # write a wav
+```
+
+In the REPL (`-i`): type text to hear it; `:preset <name>`, `:set <key> <val>`,
+`:params`, `:quit`. Once you like a setting, copy the matching `ROBOT_*` values
+into `.env`.
 
 ## Known Phase-0 limitations (intentional)
 

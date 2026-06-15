@@ -65,12 +65,19 @@ class Config:
 
     # Voice effect (DSP applied on top of any TTS backend)
     tts_effect: str = _get("TTS_EFFECT", "none")  # none | robot
+    robot_phase_strength: float = float(_get("ROBOT_PHASE_STRENGTH", "1.0"))
+    robot_phase_hop: int = int(_get("ROBOT_PHASE_HOP", "256"))
+    robot_phase_frame: int = int(_get("ROBOT_PHASE_FRAME", "2048"))
+    robot_phase_lowpass_hz: float = float(_get("ROBOT_PHASE_LOWPASS_HZ", "3500"))
+    robot_phase_formant: float = float(_get("ROBOT_PHASE_FORMANT", "1.0"))
     robot_carrier_hz: float = float(_get("ROBOT_CARRIER_HZ", "55"))
-    robot_mix: float = float(_get("ROBOT_MIX", "0.6"))
+    robot_mix: float = float(_get("ROBOT_MIX", "0.2"))
+    robot_bits: int = int(_get("ROBOT_BITS", "7"))
+    robot_rate_div: int = int(_get("ROBOT_RATE_DIV", "1"))
     robot_tremolo_hz: float = float(_get("ROBOT_TREMOLO_HZ", "0"))
     robot_tremolo_depth: float = float(_get("ROBOT_TREMOLO_DEPTH", "0"))
-    robot_comb_ms: float = float(_get("ROBOT_COMB_MS", "0"))
-    robot_comb_gain: float = float(_get("ROBOT_COMB_GAIN", "0"))
+    robot_comb_ms: float = float(_get("ROBOT_COMB_MS", "1.2"))
+    robot_comb_gain: float = float(_get("ROBOT_COMB_GAIN", "0.3"))
 
 
 config = Config()
