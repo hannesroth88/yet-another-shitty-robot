@@ -54,6 +54,8 @@ def make_printer() -> "callable":
 
 
 def main() -> int:
+    from .logsetup import setup_logging
+    setup_logging()
     banner()
     print("\nLoading models...", flush=True)
     try:

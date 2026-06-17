@@ -110,6 +110,10 @@ class Config:
     qwen3_ref_text_file: str = _get("QWEN3_REF_TEXT_FILE", "")
     # Apple-Silicon MLX path (fast + ICL voice clone). Base model required.
     qwen3_mlx_model: str = _get("QWEN3_MLX_MODEL", "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-6bit")
+    # TTS_BACKEND=worker runs the real engine below in a persistent, single-
+    # threaded child process (process isolation: warm model + no cross-thread
+    # Metal crashes). The DSP effect still applies in-process.
+    tts_worker_backend: str = _get("TTS_WORKER_BACKEND", "qwen3-mlx")
 
     # Voice effect (DSP applied on top of any TTS backend)
     tts_effect: str = _get("TTS_EFFECT", "none")  # none | robot

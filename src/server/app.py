@@ -374,6 +374,8 @@ def _ensure_cert(cert_path: Path, key_path: Path) -> bool:
 
 
 def serve(host: str | None = None, port: int | None = None) -> None:
+    from ..logsetup import setup_logging
+    setup_logging()
     host = host or config.server_host
     port = port or config.server_port
     httpd = ThreadingHTTPServer((host, port), Handler)
@@ -391,6 +393,20 @@ def serve(host: str | None = None, port: int | None = None) -> None:
 
     shown = host if host not in ("0.0.0.0", "") else "localhost"
     print(f"robot control server on {scheme}://{shown}:{port}  (Ctrl-C to stop)")
+
+    # Pre-warm the pipeline (esp. a persistent TTS worker) in the background so
+    # the first real turn isn't cold.
+    def _prewarm():
+        try:
+            orch = HUB.orchestrator()
+            warm = getattr(orch.tts, "warm", None)
+            if callable(warm):
+                print("  warming TTS worker (loading model)...")
+                warm()
+                print("  TTS worker ready.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  prewarm skipped: {exc}")
+    threading.Thread(target=_prewarm, daemon=True).start()
     print(f"  phone face : open {scheme}://<this-host-ip>:{port} on the Pixel")
     if scheme == "http":
         print("  note       : mic/camera work on localhost, but the phone (LAN IP)")

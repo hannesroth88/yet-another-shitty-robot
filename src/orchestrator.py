@@ -17,6 +17,7 @@ Phase machine:  inactive -> listening -> thinking -> speaking -> inactive
 """
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -30,6 +31,8 @@ from .llm import LLM
 from .stt import STT
 from .tts import TTS
 from .tts.streaming import AudioSegment, SentenceStreamingTTS, get_streaming_tts
+
+log = logging.getLogger("robot.turn")
 
 
 class Phase(str, Enum):
@@ -95,6 +98,7 @@ class Orchestrator:
         self._set_phase(Phase.LISTENING)
         with t.stage("stt"):
             text = self.stt.transcribe(wav_path)
+        log.info("STT  ◀  %r  (%.0fms)", text, t.stages.get("stt", 0.0))
         self._emit("heard_text", text=text)
         return text
 
@@ -175,6 +179,8 @@ class Orchestrator:
 
         reply = "".join(reply_parts).strip()
         self.history.append({"role": "assistant", "content": reply})
+        log.info("LLM  ▶  %r  (%.0fms, first token %.0fms)",
+                 reply, llm_ms, llm_first_token_ms or llm_ms)
 
         t.mark_info("llm_first_token", llm_first_token_ms or llm_ms)
         t.mark("llm", llm_ms)

@@ -72,11 +72,22 @@ sentence 2):
 # Press Enter to talk, Enter again to stop. 'q' to quit.
 ```
 
-Control server + web face (Phase 1 HTTP + WebSocket entry point):
+Control server + web face (Phase 1 HTTP + WebSocket entry point) — use the
+`robot` CLI to start it and watch logs (see [cli/README.md](cli/README.md)):
 
 ```bash
-.venv/bin/python -m src.server.app     # open http://localhost:8010
+cli/robot start            # foreground, live logs (Ctrl-C stops)
+cli/robot start --bg       # detached; HTTPS so the phone mic works
+cli/robot start --tts worker   # qwen3 cloned voice (persistent, warm, no crash)
+cli/robot status           # running? port / TLS / pids
+cli/robot logs             # follow the latest log (tail -f)
+cli/robot logs --errors    # only tracebacks / errors / segfaults
+cli/robot url              # URLs to open (localhost + phone LAN IP)
+cli/robot stop | restart   # lifecycle
 ```
+
+Or talk to the entry point directly: `.venv/bin/python -m src.server.app`
+(open http://localhost:8010).
 
 Non-interactive smoke test (synthesizes a prompt with `say`, no mic required):
 

@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+#
+# robot — one CLI for the voice-assistant control server.
+#
+#   robot start            start the server (foreground, live logs, Ctrl-C stops)
+#   robot start --bg       start detached (logs to logs/server.log)
+#   robot stop             stop the server + TTS worker
+#   robot restart [...]    stop, then start (passes through start flags)
+#   robot status           is it running? port / TLS / pids
+#   robot logs             follow the latest log (tail -f)
+#   robot logs -n 200      last 200 lines (no follow)
+#   robot logs --errors    only tracebacks / errors / segfaults
+#   robot url              print the URLs to open (localhost + phone LAN IP)
+#   robot help
+#
+# Start flags (also valid on `restart`):
+#   --bg                   run detached in the background
+#   --tts <backend>        say | piper | worker | qwen3-mlx | kokoro  (TTS_BACKEND)
+#   --http                 plain HTTP (SERVER_TLS=0, localhost only)
+#   --tls                  force HTTPS (SERVER_TLS=1, default — phone needs it)
+#   --port <n>             SERVER_PORT (default 8010)
+#
+set -uo pipefail
+cd "$(dirname "$0")/.."   # repo root
+ROOT="$(pwd)"
+
+PY=".venv/bin/python"; [ -x "$PY" ] || PY="python3"
+LOG_DIR="logs"; mkdir -p "$LOG_DIR"
+LATEST="$LOG_DIR/server.log"
+PORT="${SERVER_PORT:-8010}"
+MATCH="src.server.app"
+WMATCH="tts_worker.worker"
+
+c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_red=$'\033[31m'; c_yel=$'\033[33m'; c_cyn=$'\033[36m'
+
+_lan_ip() { ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo ""; }
+_running() { pgrep -f "$MATCH" >/dev/null 2>&1; }
+_scheme()  { [ "${SERVER_TLS:-1}" = "0" ] && echo "http" || echo "https"; }
+
+_parse_start_flags() {
+  BG=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --bg|-d)   BG=1 ;;
+      --tts)     shift; export TTS_BACKEND="$1" ;;
+      --http)    export SERVER_TLS=0 ;;
+      --tls)     export SERVER_TLS=1 ;;
+      --port)    shift; export SERVER_PORT="$1"; PORT="$1" ;;
+      *) echo "${c_red}unknown flag: $1${c_reset}"; exit 2 ;;
+    esac
+    shift
+  done
+}
+
+cmd_start() {
+  _parse_start_flags "$@"
+  if _running; then
+    echo "${c_yel}server already running${c_reset} — use 'robot restart' or 'robot stop' first"
+    cmd_status; exit 1
+  fi
+
+  # Phone needs a secure context for the mic; default HTTPS. Faithful to .env
+  # otherwise so crashes reproduce as-is.
+  export SERVER_TLS="${SERVER_TLS:-1}"
+  export PYTHONUNBUFFERED=1
+  export PYTHONFAULTHANDLER=1
+  # Piper is the stable+snappy default; --tts worker brings back the qwen3 voice.
+  export TTS_BACKEND="${TTS_BACKEND:-piper}"
+
+  local ts log; ts="$(date +%Y%m%d-%H%M%S)"; log="$LOG_DIR/server-$ts.log"
+  ln -sf "server-$ts.log" "$LATEST"
+
+  echo "============================================================"
+  echo " robot server   SERVER_TLS=$SERVER_TLS  TTS_BACKEND=$TTS_BACKEND  port=$PORT"
+  echo "   log : $log  (also $LATEST)"
+  cmd_url
+  echo "============================================================"
+
+  if [ "$BG" = "1" ]; then
+    nohup "$PY" -u -m src.server.app >"$log" 2>&1 &
+    sleep 2
+    if _running; then
+      echo "${c_grn}started in background${c_reset} (pid $(pgrep -f "$MATCH" | head -1)) — 'robot logs' to follow"
+    else
+      echo "${c_red}failed to start${c_reset} — last log lines:"; tail -n 20 "$log"; exit 1
+    fi
+  else
+    echo "${c_dim}(Ctrl-C to stop)${c_reset}"
+    exec "$PY" -u -m src.server.app 2>&1 | tee "$log"
+  fi
+}
+
+cmd_stop() {
+  local stopped=0
+  if _running; then pkill -f "$MATCH" 2>/dev/null && stopped=1; fi
+  if pgrep -f "$WMATCH" >/dev/null 2>&1; then pkill -f "$WMATCH" 2>/dev/null; stopped=1; fi
+  sleep 1
+  if [ "$stopped" = "1" ]; then echo "${c_grn}stopped${c_reset}"; else echo "${c_dim}nothing running${c_reset}"; fi
+}
+
+cmd_restart() { cmd_stop; echo; cmd_start "$@"; }
+
+cmd_status() {
+  if _running; then
+    local pid; pid="$(pgrep -f "$MATCH" | tr '\n' ' ')"
+    echo "${c_grn}● server running${c_reset}  pid: $pid"
+    if pgrep -f "$WMATCH" >/dev/null 2>&1; then
+      echo "${c_grn}● tts worker  ${c_reset}  pid: $(pgrep -f "$WMATCH" | tr '\n' ' ')  ${c_dim}(warm, persistent)${c_reset}"
+    else
+      echo "${c_dim}○ tts worker  not running (non-worker backend, or not warmed yet)${c_reset}"
+    fi
+    local code sch found=0
+    for sch in https http; do
+      code="$(curl -sk -o /dev/null -w '%{http_code}' "$sch://localhost:$PORT/api/config" 2>/dev/null)"
+      if [ "$code" = "200" ]; then echo "   HTTP $sch://localhost:$PORT/api/config -> 200"; found=1; break; fi
+    done
+    [ "$found" = 0 ] && echo "   HTTP localhost:$PORT -> ${c_yel}no response yet${c_reset}"
+  else
+    echo "${c_red}○ server not running${c_reset}"
+  fi
+  [ -e "$LATEST" ] && echo "${c_dim}   log: $(readlink "$LATEST" 2>/dev/null || echo "$LATEST")${c_reset}"
+}
+
+cmd_logs() {
+  if [ ! -e "$LATEST" ]; then echo "${c_dim}no logs yet — start the server first${c_reset}"; exit 0; fi
+  case "${1:-}" in
+    -n)        shift; tail -n "${1:-100}" "$LATEST" ;;
+    --errors)  grep -inE "error|traceback|exception|segmentation|fault|fatal|denied|refused" "$LATEST" || echo "${c_grn}no errors in $LATEST${c_reset}" ;;
+    *)         echo "${c_dim}following $LATEST (Ctrl-C to stop)${c_reset}"; tail -n 40 -f "$LATEST" ;;
+  esac
+}
+
+cmd_url() {
+  local sch ip; sch="$(_scheme)"; ip="$(_lan_ip)"
+  echo "   mac   : ${c_cyn}$sch://localhost:$PORT${c_reset}"
+  [ -n "$ip" ] && echo "   phone : ${c_cyn}$sch://$ip:$PORT${c_reset}  ${c_dim}(accept the self-signed cert)${c_reset}"
+}
+
+cmd_help() { awk 'NR>1 && /^#/{sub(/^# ?/,""); print; next} NR>1{exit}' "$0"; }
+
+case "${1:-help}" in
+  start)   shift; cmd_start "$@" ;;
+  stop)    cmd_stop ;;
+  restart) shift; cmd_restart "$@" ;;
+  status|st) cmd_status ;;
+  logs|log) shift; cmd_logs "$@" ;;
+  url)     cmd_url ;;
+  help|-h|--help) cmd_help ;;
+  *) echo "${c_red}unknown command: $1${c_reset}"; echo; cmd_help; exit 2 ;;
+esac

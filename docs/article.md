@@ -265,13 +265,51 @@ after a successful turn or two. The cause: the orchestrator synthesizes on a
 fresh per-turn worker thread, and **MLX/Metal is not thread-safe**, so touching
 the GPU from a different thread each turn eventually faults natively. `nohup`
 buffering had been hiding the evidence, so the first fix was a debug launcher
-(`tools/dev_server.sh`) that runs unbuffered with `PYTHONFAULTHANDLER=1` and tees
+(now `cli/robot start`, formerly `tools/dev_server.sh`) that runs unbuffered with
+`PYTHONFAULTHANDLER=1` and tees
 live logs — which is what surfaced the faulthandler dump. The same MLX path is
 also the slow one (~15s cold, ~2.7s/turn warm). Switching the live server to
 **Piper** (a subprocess: thread-safe + fast) fixed both at once — turns dropped
 to ~1.4–1.6s and the server survived repeated turns. Qwen3-TTS stays the quality
 voice for offline generation; bringing it back to the live loop needs a single
 dedicated TTS thread so Metal is always touched from the same thread.
+
+### Borrowing badlogic's worker pattern
+
+Mario Zechner's [pibot](https://github.com/badlogic/pibot) solved this exact
+problem, and reading his code + [write-up](https://mariozechner.at/posts/2026-05-30-shitty-robot/)
+confirmed the fix. His architecture is the one we converged on independently:
+the server is the brain (STT/LLM/TTS/agent), the phone is a "dumb renderer"
+(mic up, audio down, tools) — he even *skipped the ESP32* and drives the motor
+from the phone over USB. The key move: STT and TTS each run as a **separate,
+long-lived worker *process*** that the server talks to over a binary stdio
+protocol, streaming audio. The model loads once and stays warm; a worker crash
+fails one turn and respawns instead of taking down the server.
+
+And the language question answers itself: his Rust TTS worker uses **MLX-C** —
+the *same* Metal kernels as Python MLX (he even had to patch an MLX Metal-kernel
+bug himself). It's *parity* performance "without all the Python gunk"; his
+*default* worker is actually C++/GGML because it's cross-platform (Metal +
+Vulkan). So Rust isn't better at Metal — the win is **process isolation**, not
+the language.
+
+So I built the same thing in Python. `services/tts_worker/worker.py` is a
+persistent process that loads the engine once and synthesizes **on its main
+thread only** (no cross-thread Metal), with stdout reserved as a clean JSON
+protocol channel (an fd-dup forces all model chatter to stderr). `WorkerTTS`
+(`src/tts/worker_tts.py`) is the client: it implements the same `synthesize()`
+protocol so the orchestrator is unchanged, spawns the worker, auto-restarts it on
+crash, and is selected with `TTS_BACKEND=worker` (the DSP effect still wraps it
+in-process; the worker runs raw). The control server pre-warms it at startup.
+
+Result, driving the qwen3 voice that used to segfault: the server **survived
+repeated turns**, the worker stayed warm as one process, and with pre-warm the
+first turn dropped from ~40s cold to ~5.7s, then ~2.9s warm. Same cloned voice,
+no crash. (Piper is still the snappy ~1.4s default for fast iteration; the worker
+is the quality option.) Footnote on placement: this also clarified the
+"server on the gaming PC?" question — MLX is Apple-only, so the RTX 2080's real
+job is the LLM (via the Phase-2 Wake-on-LAN routing), while STT/TTS/orchestrator
+stay on the always-on host.
 
 ### The ESP32 firmware
 
