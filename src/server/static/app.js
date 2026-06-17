@@ -20,7 +20,8 @@ let botText = "";
 function setPhase(p) { phaseEl.textContent = p; phaseEl.dataset.p = p; face.setPhase(p); }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const wsScheme = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${wsScheme}://${location.host}/ws`);
   ws.binaryType = "arraybuffer";
   ws.onopen = () => { wsReady = true; };
   ws.onclose = () => { wsReady = false; scheduleReconnect(); };
@@ -115,11 +116,36 @@ promptEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendPrompt(
 /* ---- push-to-talk mic ---- */
 let mediaRec = null, micChunks = [], micStream = null;
 const micBtn = document.getElementById("mic");
+
+function mediaError(kind, e) {
+  // Translate the opaque getUserMedia failures into something actionable.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return window.isSecureContext
+      ? `${kind}: no media API in this browser`
+      : `${kind} needs HTTPS or localhost — you're on ${location.origin}`;
+  }
+  const map = {
+    NotAllowedError: `${kind} permission denied — allow it for this site (and grant Chrome mic/cam access in macOS System Settings ▸ Privacy)`,
+    NotFoundError: `no ${kind} device found`,
+    NotReadableError: `${kind} is busy in another app`,
+    OverconstrainedError: `${kind} constraints unmet`,
+    SecurityError: `${kind} blocked — needs HTTPS or localhost`,
+  };
+  return map[e && e.name] || `${kind} error: ${e ? e.name + " " + e.message : "unknown"}`;
+}
+
 async function toggleMic() {
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const msg = mediaError("\uD83C\uDFA4 mic", null);
+    console.warn(msg); flash(capEl, msg); return;
+  }
   try {
     micStream = micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (e) { flash(capEl, "🎤 mic denied"); return; }
+  } catch (e) {
+    const msg = mediaError("\uD83C\uDFA4 mic", e);
+    console.warn("getUserMedia(audio) failed:", e); flash(capEl, msg); return;
+  }
   micChunks = [];
   const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
     ? "audio/webm;codecs=opus" : "";
@@ -149,7 +175,10 @@ camBtn.addEventListener("click", async () => {
   try {
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
     cam.srcObject = camStream; cam.classList.add("on"); camBtn.classList.add("on");
-  } catch (e) { flash(capEl, "📷 camera denied"); }
+  } catch (e) {
+    const msg = mediaError("\uD83D\uDCF7 camera", e);
+    console.warn("getUserMedia(video) failed:", e); flash(capEl, msg);
+  }
 });
 
 /* ---- kiosk: keep screen awake + tap face for fullscreen ---- */

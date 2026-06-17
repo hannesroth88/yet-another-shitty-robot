@@ -130,6 +130,12 @@ class Config:
     # Control server (Phase 1 HTTP + WebSocket entry point)
     server_host: str = _get("SERVER_HOST", "0.0.0.0")
     server_port: int = int(_get("SERVER_PORT", "8010"))
+    # HTTPS for the web face. getUserMedia (mic/camera) needs a *secure context*:
+    # localhost is exempt, but a LAN IP over plain HTTP is not -- so the phone
+    # needs TLS. Self-signed is fine (accept the warning once on the phone).
+    server_tls: bool = _get("SERVER_TLS", "0") not in ("0", "false", "no", "")
+    server_tls_cert: str = _get("SERVER_TLS_CERT", "certs/robot.crt")
+    server_tls_key: str = _get("SERVER_TLS_KEY", "certs/robot.key")
 
 
 config = Config()

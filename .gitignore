@@ -6,3 +6,6 @@ voices/
 *.wav
 *.onnx
 *.onnx.json
+
+docs/article.mdcerts/
+logs/

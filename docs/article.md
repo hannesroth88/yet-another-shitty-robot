@@ -248,6 +248,31 @@ To make the Pixel behave like a robot face and not a browser tab: a PWA manifest
 → `requestFullscreen`. First mic + webcam test on real hardware: the avatar
 heard the prompt, answered, and the camera preview worked.
 
+**Secure-context gotcha.** `getUserMedia` (mic + camera) only works in a *secure
+context*: `localhost` is exempt, but a LAN IP over plain HTTP is **not** — so the
+phone at `http://<mac-ip>:8010` gets the mic blocked (the browser reports it as a
+generic "denied"). Two fixes landed: the client now names the real cause
+(permission vs insecure-origin vs no-device vs busy) instead of a blanket
+message, and the server gained optional **HTTPS** (`SERVER_TLS=1`) with an
+auto-generated self-signed cert. Over TLS the page is a secure context, mic and
+camera work from the phone, and the WebSocket auto-upgrades to `wss://`. On the
+Mac itself the cause is usually OS-level: Chrome needs Microphone access in
+macOS *System Settings ▸ Privacy & Security*.
+
+**The segfault after one turn.** Driving the live server with Qwen3-TTS (MLX)
+crashed the process — a `Segmentation fault: 11`, no Python traceback — right
+after a successful turn or two. The cause: the orchestrator synthesizes on a
+fresh per-turn worker thread, and **MLX/Metal is not thread-safe**, so touching
+the GPU from a different thread each turn eventually faults natively. `nohup`
+buffering had been hiding the evidence, so the first fix was a debug launcher
+(`tools/dev_server.sh`) that runs unbuffered with `PYTHONFAULTHANDLER=1` and tees
+live logs — which is what surfaced the faulthandler dump. The same MLX path is
+also the slow one (~15s cold, ~2.7s/turn warm). Switching the live server to
+**Piper** (a subprocess: thread-safe + fast) fixed both at once — turns dropped
+to ~1.4–1.6s and the server survived repeated turns. Qwen3-TTS stays the quality
+voice for offline generation; bringing it back to the live loop needs a single
+dedicated TTS thread so Metal is always touched from the same thread.
+
 ### The ESP32 firmware
 
 `firmware/esp32_face_led/` — an Arduino sketch (arduinoWebSockets + ArduinoJson +

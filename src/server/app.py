@@ -353,14 +353,51 @@ class Handler(BaseHTTPRequestHandler):
             client.send(json.dumps({"type": "pong"}))
 
 
+def _ensure_cert(cert_path: Path, key_path: Path) -> bool:
+    """Make a self-signed cert/key via openssl if missing. Returns True if usable."""
+    if cert_path.is_file() and key_path.is_file():
+        return True
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+             "-keyout", str(key_path), "-out", str(cert_path),
+             "-days", "3650", "-subj", "/CN=robot.local",
+             "-addext", "subjectAltName=DNS:robot.local,DNS:localhost,IP:127.0.0.1"],
+            check=True, capture_output=True, timeout=30,
+        )
+        print(f"  generated self-signed cert -> {cert_path}")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! could not generate TLS cert ({exc}); falling back to HTTP")
+        return False
+
+
 def serve(host: str | None = None, port: int | None = None) -> None:
     host = host or config.server_host
     port = port or config.server_port
     httpd = ThreadingHTTPServer((host, port), Handler)
+
+    scheme = "http"
+    if config.server_tls:
+        cert = (Path.cwd() / config.server_tls_cert)
+        key = (Path.cwd() / config.server_tls_key)
+        if _ensure_cert(cert, key):
+            import ssl
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(str(cert), str(key))
+            httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+            scheme = "https"
+
     shown = host if host not in ("0.0.0.0", "") else "localhost"
-    print(f"robot control server on http://{shown}:{port}  (Ctrl-C to stop)")
-    print(f"  phone face : open http://<this-host-ip>:{port} on the Pixel")
-    print(f"  ESP32 body : connect to ws://<this-host-ip>:{port}/ws")
+    print(f"robot control server on {scheme}://{shown}:{port}  (Ctrl-C to stop)")
+    print(f"  phone face : open {scheme}://<this-host-ip>:{port} on the Pixel")
+    if scheme == "http":
+        print("  note       : mic/camera work on localhost, but the phone (LAN IP)")
+        print("               needs HTTPS -> set SERVER_TLS=1 (secure context).")
+    else:
+        print("  note       : accept the self-signed cert warning once on the phone.")
+    print(f"  ESP32 body : connect to ws{'s' if scheme=='https' else ''}://<this-host-ip>:{port}/ws")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
