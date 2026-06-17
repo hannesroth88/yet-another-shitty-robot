@@ -47,8 +47,9 @@ class Config:
     stt_language: str = os.environ.get("STT_LANGUAGE", "de") or None  # type: ignore[assignment]
     # Network STT service (STT_BACKEND=http) -- runs on another host (Phase 2 NUC).
     stt_http_url: str = _get("STT_HTTP_URL", "http://localhost:9000")
-    # Parakeet candidate (STT_BACKEND=parakeet).
-    parakeet_model: str = _get("PARAKEET_MODEL", "mlx-community/parakeet-tdt-0.6b-v2")
+    # Parakeet candidate (STT_BACKEND=parakeet). v3 is multilingual (25 European
+    # languages incl. German); v2 is English-only -- use v3 for German.
+    parakeet_model: str = _get("PARAKEET_MODEL", "mlx-community/parakeet-tdt-0.6b-v3")
 
     # LLM
     llm_backend: str = _get("LLM_BACKEND", "ollama")

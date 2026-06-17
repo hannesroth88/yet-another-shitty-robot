@@ -11,8 +11,9 @@ Two runtimes are tried, in order:
 Install (Mac dev):   pip install parakeet-mlx
 Install (x86/CUDA):  pip install -U nemo_toolkit[asr]
 
-Note: Parakeet is primarily English; keep it behind a benchmark before adopting
-it for the German pipeline.
+Note: use the v3 model (default) for German -- it is multilingual (25 European
+languages). The older v2 is English-only. Keep it behind a benchmark before
+adopting it as the pipeline default.
 """
 from __future__ import annotations
 

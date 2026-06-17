@@ -394,18 +394,46 @@ def serve(host: str | None = None, port: int | None = None) -> None:
     shown = host if host not in ("0.0.0.0", "") else "localhost"
     print(f"robot control server on {scheme}://{shown}:{port}  (Ctrl-C to stop)")
 
-    # Pre-warm the pipeline (esp. a persistent TTS worker) in the background so
-    # the first real turn isn't cold.
+    # Pre-warm ALL pipeline stages in the background so the first real turn
+    # isn't cold.  Each stage is independent — failures are logged, not fatal.
     def _prewarm():
+        import tempfile, os
+
+        # 1. TTS -- load model / start worker process.
         try:
             orch = HUB.orchestrator()
             warm = getattr(orch.tts, "warm", None)
             if callable(warm):
-                print("  warming TTS worker (loading model)...")
+                print("  [prewarm] TTS: loading model...")
                 warm()
-                print("  TTS worker ready.")
+                print("  [prewarm] TTS: ready.")
+            else:
+                print(f"  [prewarm] TTS: {config.tts_backend} (no warm() needed).")
         except Exception as exc:  # noqa: BLE001
-            print(f"  prewarm skipped: {exc}")
+            print(f"  [prewarm] TTS: skipped — {exc}")
+
+        # 2. STT -- loads/downloads the model (e.g. Parakeet from HuggingFace,
+        #    faster-whisper from HF, etc.).  This is the most expensive cold-start
+        #    because the first call triggers the HF download.
+        try:
+            print(f"  [prewarm] STT: loading {config.stt_backend} model...")
+            HUB._ensure_stt()
+            print("  [prewarm] STT: ready.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [prewarm] STT: skipped — {exc}")
+
+        # 3. LLM -- send a minimal no-op generation so Ollama loads the model
+        #    weights into RAM/VRAM now rather than on the first real turn.
+        try:
+            print(f"  [prewarm] LLM: pinging {config.llm_backend}/{config.llm_model}...")
+            orch = HUB.orchestrator()
+            # Consume and discard one token — enough to force model load.
+            for _ in orch.llm.stream([{"role": "user", "content": "hi"}]):
+                break
+            print("  [prewarm] LLM: ready.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [prewarm] LLM: skipped — {exc}")
+
     threading.Thread(target=_prewarm, daemon=True).start()
     print(f"  phone face : open {scheme}://<this-host-ip>:{port} on the Pixel")
     if scheme == "http":

@@ -11,6 +11,7 @@
 #   robot logs -n 200      last 200 lines (no follow)
 #   robot logs --errors    only tracebacks / errors / segfaults
 #   robot url              print the URLs to open (localhost + phone LAN IP)
+#   robot prefetch         download all models now (run once before first start)
 #   robot help
 #
 # Start flags (also valid on `restart`):
@@ -136,6 +137,39 @@ cmd_url() {
   [ -n "$ip" ] && echo "   phone : ${c_cyn}$sch://$ip:$PORT${c_reset}  ${c_dim}(accept the self-signed cert)${c_reset}"
 }
 
+cmd_prefetch() {
+  echo "Downloading all models (STT + LLM) so startup is instant..."
+  cd "$DIR/.."
+  .venv/bin/python - <<'PYEOF'
+from src.config import config
+import sys
+
+# STT
+print(f"[prefetch] STT backend: {config.stt_backend}")
+try:
+    from src.stt import get_stt
+    print(f"[prefetch] loading STT model (this may download from HuggingFace)...")
+    get_stt()
+    print("[prefetch] STT model ready.")
+except Exception as e:
+    print(f"[prefetch] STT skipped: {e}", file=sys.stderr)
+
+# LLM
+print(f"[prefetch] LLM backend: {config.llm_backend} / {config.llm_model}")
+try:
+    from src.llm import get_llm
+    llm = get_llm()
+    print("[prefetch] pinging LLM (forces Ollama to load model weights)...")
+    for tok in llm.stream([{"role": "user", "content": "hi"}]):
+        break
+    print("[prefetch] LLM ready.")
+except Exception as e:
+    print(f"[prefetch] LLM skipped: {e}", file=sys.stderr)
+
+print("\nAll models prefetched. \'robot start\' will now be warm.")
+PYEOF
+}
+
 cmd_help() { awk 'NR>1 && /^#/{sub(/^# ?/,""); print; next} NR>1{exit}' "$0"; }
 
 case "${1:-help}" in
@@ -145,6 +179,7 @@ case "${1:-help}" in
   status|st) cmd_status ;;
   logs|log) shift; cmd_logs "$@" ;;
   url)     cmd_url ;;
+  prefetch) cmd_prefetch ;;
   help|-h|--help) cmd_help ;;
   *) echo "${c_red}unknown command: $1${c_reset}"; echo; cmd_help; exit 2 ;;
 esac

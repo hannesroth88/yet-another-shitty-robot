@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from src.config import config
@@ -42,9 +42,14 @@ def _record(environment: str, t: Timings, cold: bool, prompt: str) -> None:
     data = json.loads((ROOT / "benchmarks.json").read_text())
     data["records"].append({
         "date": date.today().isoformat(),
+        "timestamp": datetime.now().isoformat(timespec='seconds'),
         "environment": environment,
         "accel": _detect_accel(),
-        "stt_config": f"{config.stt_backend} {config.stt_model} {config.stt_compute_type}",
+        "stt_config": (
+            f"{config.parakeet_model.split('/')[-1]} (mlx)"
+            if config.stt_backend == "parakeet"
+            else f"{config.stt_backend} {config.stt_model} {config.stt_compute_type}"
+        ),
         "stt_ms": round(t.stages.get("stt", 0)),
         "llm_model": config.llm_model,
         "llm_quant": "?",

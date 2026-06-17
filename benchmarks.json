@@ -1,6 +1,7 @@
 {
   "schema": [
     "date",
+    "timestamp",
     "environment",
     "accel",
     "stt_config",
@@ -20,6 +21,7 @@
   "records": [
     {
       "date": "2026-06-12",
+      "timestamp": "2026-06-12T10:15:30",
       "environment": "Mac M1 Pro",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -37,6 +39,7 @@
     },
     {
       "date": "2026-06-12",
+      "timestamp": "2026-06-12T10:15:45",
       "environment": "Mac M1 Pro",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -54,6 +57,7 @@
     },
     {
       "date": "2026-06-12",
+      "timestamp": "2026-06-12T10:16:20",
       "environment": "Mac M1 Pro",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -71,6 +75,7 @@
     },
     {
       "date": "2026-06-17",
+      "timestamp": "2026-06-17T14:22:10",
       "environment": "Mac M1 Pro",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -84,10 +89,11 @@
       "total_ms": 20320,
       "notes": "smoke run. Testing Qwen3-TTS (long German ~70 words, non-streaming). Full text buffered before output. Qwen3-TTS streams well for robots but 17s shows need for streaming implementation.",
       "coldstart_ms": null,
-      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erz\u00e4hlen und dich bei vielen Aufgaben unterst\u00fctzen. Meine Stimme klingt vielleicht etwas k\u00fcnstlich, aber genau das macht mich zu einem echten kleinen Roboter."
+      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erzählen und dich bei vielen Aufgaben unterstützen. Meine Stimme klingt vielleicht etwas künstlich, aber genau das macht mich zu einem echten kleinen Roboter."
     },
     {
       "date": "2026-06-17",
+      "timestamp": "2026-06-17T14:25:33",
       "environment": "Mac M1 Pro",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -101,10 +107,11 @@
       "total_ms": 25742,
       "notes": "COLD run (model load). Testing Qwen3-TTS (long German ~70 words, non-streaming).",
       "coldstart_ms": 2222,
-      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erz\u00e4hlen und dich bei vielen Aufgaben unterst\u00fctzen. Meine Stimme klingt vielleicht etwas k\u00fcnstlich, aber genau das macht mich zu einem echten kleinen Roboter."
+      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erzählen und dich bei vielen Aufgaben unterstützen. Meine Stimme klingt vielleicht etwas künstlich, aber genau das macht mich zu einem echten kleinen Roboter."
     },
     {
       "date": "2026-06-17",
+      "timestamp": "2026-06-17T14:28:15",
       "environment": "Mac M1 Pro",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -122,6 +129,7 @@
     },
     {
       "date": "2026-06-17",
+      "timestamp": "2026-06-17T15:45:22",
       "environment": "Mac M1 Pro (Phase 1 streaming)",
       "accel": "Metal (LLM) / CPU (STT)",
       "stt_config": "faster-whisper base int8",
@@ -137,6 +145,82 @@
       "notes": "Phase 1 streaming: first audio at 3.3s vs full turn 9.6s (~60% perceived-latency cut). Piper per-sentence.",
       "coldstart_ms": null,
       "prompt_text": "Antworte in drei kurzen Saetzen: Was ist ein Roboter?"
+    },
+    {
+      "date": "2026-06-17",
+      "timestamp": "2026-06-17T21:37:50",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper large-v3-turbo int8",
+      "stt_ms": 3638,
+      "llm_model": "llama3.2:latest",
+      "llm_quant": "?",
+      "llm_first_token_ms": 1962,
+      "llm_ms": 2223,
+      "tts_config": "worker",
+      "tts_ms": 33367,
+      "first_audio_ms": 35591,
+      "total_ms": 39229,
+      "notes": "COLD run (model load).",
+      "coldstart_ms": null,
+      "prompt_text": "Wie lautet die Hauptstadt von Frankreich? Antworte in einem kurzen Satz."
+    },
+    {
+      "date": "2026-06-17",
+      "timestamp": "2026-06-17T21:39:25",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper large-v3-turbo int8",
+      "stt_ms": 3660,
+      "llm_model": "llama3.2:latest",
+      "llm_quant": "?",
+      "llm_first_token_ms": 239,
+      "llm_ms": 406,
+      "tts_config": "kokoro",
+      "tts_ms": 5393,
+      "first_audio_ms": 5800,
+      "total_ms": 9459,
+      "notes": "smoke run.",
+      "coldstart_ms": null,
+      "prompt_text": "Wie lautet die Hauptstadt von Frankreich? Antworte in einem kurzen Satz."
+    },
+    {
+      "date": "2026-06-17",
+      "timestamp": "2026-06-17T21:40:06",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper large-v3-turbo int8",
+      "stt_ms": 3727,
+      "llm_model": "llama3.2:latest",
+      "llm_quant": "?",
+      "llm_first_token_ms": 223,
+      "llm_ms": 391,
+      "tts_config": "qwen3-mlx",
+      "tts_ms": 10228,
+      "first_audio_ms": 10620,
+      "total_ms": 14345,
+      "notes": "smoke run.",
+      "coldstart_ms": null,
+      "prompt_text": "Wie lautet die Hauptstadt von Frankreich? Antworte in einem kurzen Satz."
+    },
+    {
+      "date": "2026-06-17",
+      "timestamp": "2026-06-17T21:55:19",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / MLX (STT)",
+      "stt_config": "parakeet-tdt-0.6b-v3 (mlx)",
+      "stt_ms": 383,
+      "llm_model": "llama3.2:latest",
+      "llm_quant": "?",
+      "llm_first_token_ms": 2306,
+      "llm_ms": 2566,
+      "tts_config": "piper",
+      "tts_ms": 3474,
+      "first_audio_ms": 4727,
+      "total_ms": 6423,
+      "notes": "Parakeet TDT 0.6b v3 (MLX) — multilingual German. ~25x faster STT than faster-whisper large-v3-turbo (147ms warm), near-perfect German transcript. parakeet-mlx; Apple Silicon path.",
+      "coldstart_ms": null,
+      "prompt_text": "Erzähl mir einen kurzen Witz."
     }
   ]
 }

@@ -15,7 +15,7 @@ DATA = ROOT / "benchmarks.json"
 OUT = ROOT / "benchmarks.html"
 
 COLUMNS = [
-    ("date", "Date", "text"),
+    ("timestamp", "Time", "text"),
     ("environment", "Environment", "text"),
     ("accel", "Accel", "text"),
     ("stt_config", "STT Config", "text"),
@@ -195,6 +195,8 @@ function renderBody(rows, ext){
         } else {
           td.innerHTML = '<span style="color:var(--line)">&#x2014;</span>';
         }
+      } else if (key === "timestamp") {
+        td.textContent = (v ?? "").replace("T", " ");
       } else {
         td.textContent = v ?? "";
       }
