@@ -193,3 +193,66 @@ nuc-only, distributed-stt-tts); `python -m src.presets <key>` prints the matchin
 side-by-side fleet benchmark rows (Mac-only vs NUC+GPU warm/cold vs NUC-only).
 The WoL packet builder is unit-tested; the wake itself waits on a configured MAC
 and a box that's plugged in.
+
+## The phone is the face, the ESP32 is the body
+
+A design fork worth recording. The plan (Phase 4) imagined an **ESP32-S3-Box**
+as the audio front-end. But the board I actually have is a bare
+**ESP32-S3-DevKitC-1 (N16R8)** — WiFi, 36 GPIO, one WS2812 RGB LED on GPIO48, and
+**no mic, speaker, camera, or display**. Meanwhile the robot is "a small robot
+with a smartphone" (pibot's framing) and I have a **Pixel 3** with all of that I/O
+plus a great screen.
+
+So the roles invert from the naive "ESP32 = edge device" reading:
+
+- **Phone = front-end + caller.** It runs the web-face in the browser, captures
+  the mic, plays TTS, shows the camera, renders the animated avatar, and is the
+  one that *calls the pipeline* (over the control-server WebSocket).
+- **ESP32 = body.** It's a *second subscriber* to the same WebSocket. It never
+  calls the pipeline; it reacts to `phase` events (RGB LED now, motors later).
+- **Fleet = brains.** STT → LLM → TTS + the broadcast hub.
+
+The one change this forced: the control server used to give each WS connection
+its own orchestrator, so the phone's turn was invisible to the ESP32. It's now
+**one shared orchestrator + a broadcast hub** — any client can send input, and
+*every* client (phone face + ESP32 body) receives the same event stream. One
+robot, one face, one body, one pipeline.
+
+### The avatar (phone web-face)
+
+An SVG robot face — two eyes with pupils + glowing irises, two eyebrows, and a
+mouth — rigged in `src/server/static/face.js`. A tiny tween engine eases between
+per-phase expression targets, with idle micro-behaviours (blink every few
+seconds, subtle pupil drift) so it feels alive. Phase → expression:
+
+| Phase | Eyes | Brows | Mouth |
+|-------|------|-------|-------|
+| inactive | half-lidded | neutral | gentle smile |
+| listening | open | raised | friendly smile |
+| thinking | look up/side | one raised | small, focused |
+| speaking | open, lively | neutral | **animated talking** + smile |
+| error | narrowed | furrowed | concerned frown |
+
+The mouth is a quadratic curve whose middle dips down for a smile or up for a
+frown; talking is a `speaking`-gated oscillation plus a per-`tts_audio`-chunk
+twitch. `app.js` is the WS client: it maps events to expressions, queues + plays
+TTS segments in order, records mic audio via `MediaRecorder` and ships the blob
+over the WS as a binary frame (the server ffmpeg-converts → STT → turn), and has
+an optional local webcam preview (a hook for future vision).
+
+### Kiosk on the phone
+
+To make the Pixel behave like a robot face and not a browser tab: a PWA manifest
+(`display: fullscreen`) so **Add to Home screen** launches it chrome-less, a
+`navigator.wakeLock` so the screen never sleeps while it's up, and tap-the-face
+→ `requestFullscreen`. First mic + webcam test on real hardware: the avatar
+heard the prompt, answered, and the camera preview worked.
+
+### The ESP32 firmware
+
+`firmware/esp32_face_led/` — an Arduino sketch (arduinoWebSockets + ArduinoJson +
+Adafruit NeoPixel) that joins the same `ws://host:8010/ws`, parses `phase`
+events, and eases the onboard WS2812 between colours (listening = blue, thinking
+= pulsing purple, speaking = green, error = red). It sends nothing; it's pure
+output. The motor/motion `tool` events are a marked TODO for the next Phase-4
+step.
