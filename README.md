@@ -109,7 +109,7 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
 | `STT_BACKEND` / `STT_MODEL` | `faster-whisper` / `base` | `tiny`/`base`/`small`/`medium` |
 | `LLM_BACKEND` / `LLM_MODEL` | `ollama` / `llama3.2:latest` | any Ollama model |
 | `OLLAMA_HOST` | `http://localhost:11434` | point at a remote host later (e.g. woken Gaming PC) |
-| `TTS_BACKEND` | `say` | `say` (mac), `piper` (fleet), `kokoro` (German Martin), `qwen3` (quality) |
+| `TTS_BACKEND` | `say` | `say` (mac), `piper` (fleet), `kokoro` (German Martin), `qwen3-mlx` (Apple-Silicon voice clone), `qwen3` (PyTorch x86/CUDA) |
 
 ## Swapping components (preview of later phases)
 
@@ -143,8 +143,30 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
   voice name, speed, lang) are in `.env`. The robot effect below still applies
   on top — `TTS_BACKEND=kokoro` + `TTS_EFFECT=robot` chains Kokoro → robot
   filter.
-- **Use Qwen3-TTS** (best German naturalness / expressiveness on capable HW):
-  install optional deps, warm up once, then set `TTS_BACKEND=qwen3`.
+- **Use Qwen3-TTS on Apple Silicon (MLX) — recommended quality path** (fast +
+  clones a custom voice). This runs a 6-bit Base model natively on Metal and
+  voice-clones a reference clip in-context (ICL), the same approach as
+  [badlogic/pibot](https://github.com/badlogic/pibot). On the M1 it reaches
+  **RTF < 1** (vs ~4 for the PyTorch path below) and needs **no robot DSP** —
+  the voice comes straight from your reference sample.
+
+  ```bash
+  .venv/bin/pip install mlx-audio
+  # 1) make a clean mono reference wav from your sample (e.g. an ElevenLabs clip):
+  ffmpeg -i voices/sample/your-voice.mp3 -ac 1 -ar 24000 voices/sample/reference.wav
+  # 2) put the EXACT transcript of that clip next to it (or set QWEN3_REF_TEXT):
+  #    voices/sample/your-voice.txt
+  # 3) point .env at them, warm up, and switch backend:
+  .venv/bin/python -m utils.fetch_qwen3_mlx   # downloads model + writes voices/qwen3-mlx-smoke.wav
+  ```
+
+  Set `TTS_BACKEND=qwen3-mlx`, `TTS_EFFECT=none`, `QWEN3_REF_AUDIO`,
+  `QWEN3_REF_TEXT_FILE` (or `QWEN3_REF_TEXT`), and `QWEN3_LANGUAGE` in `.env`.
+  Model: `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-6bit` (`QWEN3_MLX_MODEL`). The
+  model loads once at pipeline startup and stays resident, so per-turn latency
+  is just generation time.
+- **Use Qwen3-TTS (PyTorch/transformers) on x86/CUDA hosts:** install optional
+  deps, warm up once, then set `TTS_BACKEND=qwen3`.
 
   ```bash
   .venv/bin/pip install qwen-tts torch
@@ -153,7 +175,10 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
 
   Default config targets `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`. Tune with
   `QWEN3_*` vars in `.env` (model, device map, dtype, language, speaker,
-  optional clone mode with reference audio).
+  optional clone mode with reference audio). Note: `qwen-tts` pins
+  `transformers==4.57.3`, which conflicts with `mlx-audio` — keep the two paths
+  in separate venvs. On Apple Silicon this path is slow (float32 on MPS,
+  RTF ~4); prefer `qwen3-mlx` above.
 - **Bigger/smaller STT:** change `STT_MODEL`.
 
 ## Robot voice effect

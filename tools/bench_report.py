@@ -28,6 +28,8 @@ COLUMNS = [
     ("tts_ms", "TTS (ms)", "ms"),
     ("total_ms", "TOTAL (ms)", "ms"),
     ("notes", "Notes", "text"),
+    ("coldstart_ms", "Coldstart (ms)", "ms"),
+    ("prompt_text", "Prompt", "hidden"),
 ]
 
 TEMPLATE = """<!doctype html>
@@ -72,6 +74,18 @@ TEMPLATE = """<!doctype html>
   .worst { color:var(--bad); }
   td.notes { white-space:normal; color:var(--mut); min-width:220px; font-size:13px; }
   .total { font-weight:700; }
+  th.prompt-th { width:28px; min-width:28px; text-align:center; color:var(--mut); font-size:15px; cursor:default; }
+  th.prompt-th:hover { color:var(--fg); }
+  td.prompt-cell { width:28px; min-width:28px; text-align:center; position:relative; cursor:default; }
+  td.prompt-cell .prompt-tip {
+    visibility:hidden; opacity:0; transition:opacity .15s;
+    position:absolute; right:0; top:100%; margin-top:4px;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:10px 14px; width:340px; white-space:normal; font-size:12px;
+    color:var(--fg); z-index:50; box-shadow:0 6px 20px rgba(0,0,0,.5);
+    text-align:left; line-height:1.5;
+  }
+  td.prompt-cell:hover .prompt-tip { visibility:visible; opacity:1; }
   footer { color:var(--mut); font-size:12px; padding:0 24px 30px; }
   code { background:var(--panel); padding:2px 6px; border-radius:4px; }
 </style>
@@ -141,9 +155,16 @@ function renderHead(){
   const tr = document.createElement("tr");
   COLUMNS.forEach(([key,label,type]) => {
     const th = document.createElement("th");
-    const arrow = key===sortKey ? (sortDir>0?" ▲":" ▼") : "";
-    th.innerHTML = label + '<span class="arrow">'+arrow+'</span>';
-    th.onclick = () => { if(sortKey===key) sortDir*=-1; else {sortKey=key; sortDir=1;} render(); };
+    if (type === "hidden") {
+      th.className = "prompt-th";
+      th.textContent = "💬";
+      th.title = "Prompt text (hover a row cell to see)";
+      th.onclick = null;
+    } else {
+      const arrow = key===sortKey ? (sortDir>0?" \u25B2":" \u25BC") : "";
+      th.innerHTML = label + '<span class="arrow">'+arrow+'</span>';
+      th.onclick = () => { if(sortKey===key) sortDir*=-1; else {sortKey=key; sortDir=1;} render(); };
+    }
     tr.appendChild(th);
   });
   const thead = document.querySelector("#tbl thead"); thead.innerHTML=""; thead.appendChild(tr);
@@ -165,6 +186,14 @@ function renderBody(rows, ext){
         }
       } else if (key === "notes"){
         td.className = "notes"; td.textContent = v || "";
+      } else if (type === "hidden"){
+        td.className = "prompt-cell";
+        if (v) {
+          const esc = v.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+          td.innerHTML = '&#x1F4AC;<span class="prompt-tip">'+esc+'</span>';
+        } else {
+          td.innerHTML = '<span style="color:var(--line)">&#x2014;</span>';
+        }
       } else {
         td.textContent = v ?? "";
       }

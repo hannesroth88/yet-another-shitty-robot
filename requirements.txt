@@ -8,6 +8,11 @@ faster-whisper>=1.0.0
 # kokoro-onnx
 # huggingface_hub
 
-# Optional: Qwen3-TTS backend (TTS_BACKEND=qwen3)
+# Optional: Qwen3-TTS, Apple Silicon MLX path -- fast + voice clone (TTS_BACKEND=qwen3-mlx)
+#   the recommended quality path on the M1 (RTF < 1, clones a reference voice)
+# mlx-audio
+
+# Optional: Qwen3-TTS, PyTorch/transformers path for x86/CUDA hosts (TTS_BACKEND=qwen3)
+#   note: pins transformers==4.57.3, which conflicts with mlx-audio; use one venv per path
 # qwen-tts
 # torch

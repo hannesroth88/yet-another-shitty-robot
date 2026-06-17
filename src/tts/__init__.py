@@ -31,6 +31,9 @@ def _make_backend() -> TTS:
     if config.tts_backend == "qwen3":
         from .qwen3_tts import Qwen3TTS
         return Qwen3TTS()
+    if config.tts_backend in ("qwen3-mlx", "qwen3_mlx"):
+        from .qwen3_mlx_tts import Qwen3MlxTTS
+        return Qwen3MlxTTS()
     raise ValueError(f"Unknown TTS_BACKEND: {config.tts_backend}")
 
 

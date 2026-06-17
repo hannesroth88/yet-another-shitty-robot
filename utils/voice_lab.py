@@ -1,19 +1,21 @@
-"""Robot-voice lab: audition TTS + robot effect presets, tune params live.
+"""Robot-voice lab: audition the TTS voice and (optionally) robot effect presets.
 
-Synthesizes German text with the configured TTS backend (Thorsten/Piper by
-default), applies a robot effect, and plays it. Pick a preset, override any
-parameter, compare all presets, or drop into an interactive loop.
+Synthesizes German text with the configured TTS backend and plays it. By default
+it plays the raw backend voice (preset `dry`) -- with the cloned `qwen3-mlx`
+voice that is exactly what the pipeline speaks. The robot-effect presets
+(`classic`, `mechanical`, `tiny`, ...) are opt-in via --preset for experimenting
+with a DSP robot character on top.
 
-The German comes from the TTS backend; the robot character is pure DSP applied
+The German comes from the TTS backend; any robot character is pure DSP applied
 on top, so the language is always preserved.
 
 Examples:
-    .venv/bin/python -m utils.voice_lab                      # default text, "android" preset
-    .venv/bin/python -m utils.voice_lab "Hallo Welt" --preset dalek
+    .venv/bin/python -m utils.voice_lab                      # default text, raw voice (preset dry)
+    .venv/bin/python -m utils.voice_lab "Hallo Welt"          # the actual cloned voice
+    .venv/bin/python -m utils.voice_lab "Hallo" --preset tiny # add the robot DSP
     .venv/bin/python -m utils.voice_lab --all                # play every preset back to back
-    .venv/bin/python -m utils.voice_lab --phase 1.0 --hop 220 --bits 6
     .venv/bin/python -m utils.voice_lab --interactive        # type lines, re-synth live
-    .venv/bin/python -m utils.voice_lab --save out.wav --preset android
+    .venv/bin/python -m utils.voice_lab --save out.wav        # write a wav
 
 Mac plays via `afplay`. On Linux it tries `aplay`/`ffplay`.
 """
@@ -107,7 +109,7 @@ def _render(text: str, params: dict[str, float], backend, out_path: str) -> None
 def main() -> None:
     p = argparse.ArgumentParser(description="Audition TTS robot-voice presets.")
     p.add_argument("text", nargs="?", default=DEFAULT_TEXT, help="text to speak")
-    p.add_argument("--preset", choices=list(PRESETS), default="tiny")
+    p.add_argument("--preset", choices=list(PRESETS), default="dry")
     p.add_argument("--all", action="store_true", help="play every preset in sequence")
     p.add_argument("--interactive", "-i", action="store_true", help="loop: type lines to re-synth")
     p.add_argument("--save", metavar="WAV", help="save to this file instead of a temp file")

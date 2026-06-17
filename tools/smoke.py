@@ -3,10 +3,12 @@
 Usage:
   .venv/bin/python -m tools.smoke ["prompt text"]
   .venv/bin/python -m tools.smoke ["prompt text"] --record "Mac M1 Pro"
+  .venv/bin/python -m tools.smoke ["prompt text"] --no-play   # benchmark silently
 
-Generates a test clip with macOS `say`, runs it through the full Pipeline, and
-prints per-stage latency. With --record, appends the measured run to
-benchmarks.json and regenerates benchmarks.html. Mac-only (uses say).
+Generates a test clip with macOS `say`, runs it through the full Pipeline,
+plays the spoken reply, and prints per-stage latency. With --record, appends the
+measured run to benchmarks.json and regenerates benchmarks.html. Mac-only (uses
+say/afplay).
 """
 from __future__ import annotations
 
@@ -35,7 +37,7 @@ def _detect_accel() -> str:
     return "CPU"
 
 
-def _record(environment: str, t: Timings, cold: bool) -> None:
+def _record(environment: str, t: Timings, cold: bool, prompt: str) -> None:
     """Append this run to benchmarks.json and regenerate the HTML report."""
     data = json.loads((ROOT / "benchmarks.json").read_text())
     data["records"].append({
@@ -57,6 +59,8 @@ def _record(environment: str, t: Timings, cold: bool) -> None:
         "tts_ms": round(t.stages.get("tts", 0)),
         "total_ms": round(t.total()),
         "notes": "COLD run (model load)." if cold else "smoke run.",
+        "coldstart_ms": None,
+        "prompt_text": prompt,
     })
     (ROOT / "benchmarks.json").write_text(json.dumps(data, indent=2) + "\n")
     from tools import bench_report
@@ -67,11 +71,18 @@ def _record(environment: str, t: Timings, cold: bool) -> None:
 def main() -> int:
     args = sys.argv[1:]
     environment = None
+    play = True
+    if "--no-play" in args:
+        play = False
+        args.remove("--no-play")
     if "--record" in args:
         i = args.index("--record")
         environment = args[i + 1] if i + 1 < len(args) else "unknown"
         del args[i:i + 2]
-    prompt = args[0] if args else "What is the capital of France? Answer in one short sentence."
+    DEFAULT_PROMPT = (
+        "Wie lautet die Hauptstadt von Frankreich? Antworte in einem kurzen Satz."
+    )
+    prompt = args[0] if args else DEFAULT_PROMPT
 
     tmp = Path(tempfile.mkdtemp(prefix="robot-smoke-"))
     clip = str(tmp / "prompt.wav")
@@ -102,9 +113,13 @@ def main() -> int:
         return 1
     print("latency:", t.render())
 
+    if play:
+        from src.audio import play_wav
+        play_wav(out)
+
     if environment:
         cold = t.info.get("llm_first_token", 0) > 1000
-        _record(environment, t, cold)
+        _record(environment, t, cold, prompt)
     print("OK")
     return 0
 

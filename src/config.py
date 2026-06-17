@@ -80,6 +80,9 @@ class Config:
     qwen3_instruct: str = _get("QWEN3_INSTRUCT", "")
     qwen3_ref_audio: str = _get("QWEN3_REF_AUDIO", "voices/robot-ref.wav")
     qwen3_ref_text: str = _get("QWEN3_REF_TEXT", "")
+    qwen3_ref_text_file: str = _get("QWEN3_REF_TEXT_FILE", "")
+    # Apple-Silicon MLX path (fast + ICL voice clone). Base model required.
+    qwen3_mlx_model: str = _get("QWEN3_MLX_MODEL", "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-6bit")
 
     # Voice effect (DSP applied on top of any TTS backend)
     tts_effect: str = _get("TTS_EFFECT", "none")  # none | robot
