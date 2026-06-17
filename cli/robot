@@ -139,7 +139,7 @@ cmd_url() {
 
 cmd_prefetch() {
   echo "Downloading all models (STT + LLM) so startup is instant..."
-  cd "$DIR/.."
+  # already at repo root (line 25 cd'd there)
   .venv/bin/python - <<'PYEOF'
 from src.config import config
 import sys
