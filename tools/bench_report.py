@@ -26,6 +26,7 @@ COLUMNS = [
     ("llm_ms", "LLM (ms)", "ms"),
     ("tts_config", "TTS Config", "text"),
     ("tts_ms", "TTS (ms)", "ms"),
+    ("first_audio_ms", "1st audio (ms)", "ms"),
     ("total_ms", "TOTAL (ms)", "ms"),
     ("notes", "Notes", "text"),
     ("coldstart_ms", "Coldstart (ms)", "ms"),

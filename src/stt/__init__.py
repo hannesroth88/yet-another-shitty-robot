@@ -14,4 +14,10 @@ def get_stt() -> STT:
     if config.stt_backend in ("faster-whisper", "faster_whisper", "whisper"):
         from .faster_whisper_stt import FasterWhisperSTT
         return FasterWhisperSTT()
+    if config.stt_backend == "parakeet":
+        from .parakeet_stt import ParakeetSTT
+        return ParakeetSTT()
+    if config.stt_backend == "http":
+        from .http_stt import HttpSTT
+        return HttpSTT()
     raise ValueError(f"Unknown STT_BACKEND: {config.stt_backend}")

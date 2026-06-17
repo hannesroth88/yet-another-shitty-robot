@@ -107,3 +107,89 @@ could drop from ~20 s to ~5 s for the same long German prompt.
 **Tracked as:** Phase 1 / TTS streaming — prerequisite for the robot feeling
 responsive. Implement alongside the client/server split so the TTS service stays
 resident and streams over the wire.
+
+## Phase 1 — the service split (done)
+
+The Phase-0 loop was synchronous: record → transcribe → wait for the *whole* LLM
+reply → synthesize the *whole* reply → play. Phase 1 rebuilds that into an
+event-driven orchestrator with a transport seam, and — the big UX lever — it
+overlaps the LLM and the TTS.
+
+**Sentence chunker.** `src/text/sentence_chunker.py` turns the LLM token stream
+into complete sentences as soon as they form (`push(delta) -> [sentences]`,
+`flush() -> tail`). It's careful about German abbreviations ("z. B.") and decimals
+("3.14") so it doesn't cut mid-token. 8 unit tests cover it.
+
+**Streaming TTS.** `src/tts/streaming.py` defines a `StreamingTTS` protocol and a
+`SentenceStreamingTTS` adapter that wraps any non-streaming engine (say, Piper,
+Kokoro): it synthesizes one wav per sentence and yields each as it's ready.
+Native-streaming engines (Qwen3) can plug straight in later.
+
+**Event-driven orchestrator.** `src/orchestrator.py` replaces the blocking
+`Pipeline`. It runs a phase state machine (`inactive → listening → thinking →
+speaking`) and emits events (`phase`, `assistant_delta`, `tts_audio`, `latency`,
+`error`) to any number of subscribers. Internally the LLM streams on its own
+thread while a consumer synthesizes + plays each sentence as it arrives — so
+**LLM timing stays pure** (honest benchmark numbers) and audio starts early.
+
+**Control server.** `src/server/app.py` is a stdlib-only HTTP + WebSocket server
+(hand-rolled WS framing, no aiohttp/websockets dependency). The CLI is one client
+of the orchestrator; a tiny web face (`src/server/static/index.html`) is another.
+Send `{type:"prompt"}` over the WS, receive the event stream live.
+
+**Network backends (the Phase 2 seam, landed early).** `src/llm/http_llm.py`
+(Ollama or OpenAI-compatible) and `src/stt/http_stt.py` (multipart POST) let any
+stage move to another host by flipping env — no orchestrator change. Proven
+locally: `LLM_BACKEND=http LLM_HTTP_URL=…` against Ollama worked with zero code
+change.
+
+### The headline metric: `first_audio_ms`
+
+New benchmark column. With Piper streaming a 3-sentence German reply:
+
+| metric | value |
+|--------|-------|
+| STT | 451 ms |
+| LLM (full) | 2297 ms |
+| TTS (full, 3 sentences) | 6841 ms |
+| **first audio** | **3332 ms** |
+| TOTAL (full turn) | 9589 ms |
+
+Without streaming the user waits for the whole turn — ~9.6 s — before hearing a
+word. With streaming the first sentence plays at **~3.3 s**, a **~60 % cut in
+perceived latency**. The win grows with reply length (more sentences = earlier
+first audio relative to the total). The strict `first_audio < llm` holds for
+multi-sentence replies whose opening sentence is short; either way the
+perceived-latency-vs-total win is the real story.
+
+## Phase 2 — fleet distribution (foundation laid, hardware pending)
+
+Phase 2 makes placement real: LLM on the on-demand Gaming-PC GPU, always-on
+services on the NUC, with graceful fallback. The code that doesn't need the other
+hosts is in and tested on the Mac; the actual cross-host benchmark runs wait on
+bringing the NUC + GPU box online.
+
+**Routed LLM + Wake-on-LAN.** `src/llm/routed_llm.py` composes a remote-GPU
+primary with a local fallback behind the same `stream()` interface
+(`LLM_BACKEND=routed`). On a request it checks the primary port; if closed it
+sends a WoL magic packet (`src/net/wol.py`) and polls `/api/tags` until the box
+is up (logged as a COLD run); if it doesn't wake in time it downgrades to the
+local small model and notes the downgrade. An idle timer suspends the GPU box
+over SSH. Proven locally: with an unreachable primary the turn completed on the
+local fallback, emitting `downgrade -> local fallback llama3.2` — **orchestrator
+unchanged**.
+
+**Standalone services.** `services/stt_server` and `services/tts_server` run the
+STT/TTS backends as HTTP services so they can live on the NUC. The STT service
+was validated end-to-end on the Mac: `http_stt` → `stt_server` → faster-whisper
+round-tripped "Hallo, das ist ein Test." correctly. (Multipart parsing is
+hand-rolled to avoid the deprecated `cgi` module — future-proof for Python 3.13.)
+
+**Presets.** `src/presets.py` declares 4 host layouts (mac-local, nuc-gpu,
+nuc-only, distributed-stt-tts); `python -m src.presets <key>` prints the matching
+`.env`. Real MACs/IPs get filled in as hosts come online.
+
+**Still pending (needs the hardware):** actually waking the Gaming PC, and the
+side-by-side fleet benchmark rows (Mac-only vs NUC+GPU warm/cold vs NUC-only).
+The WoL packet builder is unit-tested; the wake itself waits on a configured MAC
+and a box that's plugged in.

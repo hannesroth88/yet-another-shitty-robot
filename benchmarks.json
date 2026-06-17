@@ -11,6 +11,7 @@
     "llm_ms",
     "tts_config",
     "tts_ms",
+    "first_audio_ms",
     "total_ms",
     "notes",
     "coldstart_ms",
@@ -118,6 +119,24 @@
       "notes": "COLD run (model load).",
       "coldstart_ms": null,
       "prompt_text": "Wie lautet die Hauptstadt von Frankreich? Antworte in einem kurzen Satz."
+    },
+    {
+      "date": "2026-06-17",
+      "environment": "Mac M1 Pro (Phase 1 streaming)",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "faster-whisper base int8",
+      "stt_ms": 451,
+      "llm_model": "llama3.2:latest",
+      "llm_quant": "Q4_K_M",
+      "llm_first_token_ms": 266,
+      "llm_ms": 2297,
+      "tts_config": "piper",
+      "tts_ms": 6841,
+      "first_audio_ms": 3332,
+      "total_ms": 9589,
+      "notes": "Phase 1 streaming: first audio at 3.3s vs full turn 9.6s (~60% perceived-latency cut). Piper per-sentence.",
+      "coldstart_ms": null,
+      "prompt_text": "Antworte in drei kurzen Saetzen: Was ist ein Roboter?"
     }
   ]
 }

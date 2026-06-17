@@ -23,7 +23,7 @@ from pathlib import Path
 from src.config import config
 from src.latency import Timings
 from src.llm import get_llm
-from src.pipeline import Pipeline
+from src.orchestrator import Orchestrator
 from src.stt import get_stt
 from src.tts import get_tts
 
@@ -57,6 +57,7 @@ def _record(environment: str, t: Timings, cold: bool, prompt: str) -> None:
                if config.tts_backend == "qwen3" else "")
         ),
         "tts_ms": round(t.stages.get("tts", 0)),
+        "first_audio_ms": round(t.info.get("first_audio", 0)) or None,
         "total_ms": round(t.total()),
         "notes": "COLD run (model load)." if cold else "smoke run.",
         "coldstart_ms": None,
@@ -92,29 +93,30 @@ def main() -> int:
     )
 
     build_start = time.perf_counter()
-    pipe = Pipeline(get_stt(), get_llm(), get_tts(), config.system_prompt)
+    orch = Orchestrator(get_stt(), get_llm(), get_tts(), config.system_prompt)
     build_ms = (time.perf_counter() - build_start) * 1000.0
 
     t = Timings()
-    heard = pipe.transcribe(clip, t)
+    heard = orch.transcribe(clip, t)
     print("you:", heard)
     if not heard:
         print("FAIL: STT produced no text", file=sys.stderr)
         return 1
-    reply = pipe.respond(heard, t)
+    reply = orch.respond(heard, t, play=False)
     print("bot:", reply)
     if not reply:
         print("FAIL: LLM produced no text", file=sys.stderr)
-        return 1
-    out = str(tmp / "reply.wav")
-    pipe.speak(reply, out, t)
-    if Path(out).stat().st_size <= 0:
-        print("FAIL: TTS produced empty audio", file=sys.stderr)
         return 1
     print("latency:", t.render())
 
     if play:
         from src.audio import play_wav
+        # Re-synthesize the full reply once for a clean playback of the whole turn.
+        out = str(tmp / "reply.wav")
+        orch.tts.synthesize(reply, out)
+        if Path(out).stat().st_size <= 0:
+            print("FAIL: TTS produced empty audio", file=sys.stderr)
+            return 1
         play_wav(out)
 
     if environment:

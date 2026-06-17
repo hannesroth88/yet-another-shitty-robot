@@ -21,10 +21,18 @@ embedded device + a physical robot.
    Mac (M1) as a push-to-talk loop with per-stage latency. See `README.md`,
    `src/`, run `python -m src.main` or `python -m tools.smoke`. ~1.7–2.1s/turn
    (faster-whisper base + Ollama llama3.2 + macOS `say`).
-2. **Phase 1 — Service split:** Break STT, LLM, TTS into swappable services
-   behind a stable interface so any component can run on a different host.
-3. **Phase 2 — Fleet:** Distribute services across the machines below (e.g. LLM
-   on the Gaming PC GPU, orchestration on the NUC).
+2. **Phase 1 — Service split (DONE ✅):** Event-driven orchestrator
+   (`src/orchestrator.py`) with a phase state machine + event bus; streaming TTS
+   via a sentence chunker (first audio plays before the LLM finishes —
+   `first_audio_ms` metric); HTTP + WebSocket control server (`src/server/app.py`)
+   + web face; network backends (`http_llm`, `http_stt`) so any stage can move
+   host by flipping env. Run `python -m src.server.app` or `python -m src.main`.
+3. **Phase 2 — Fleet (foundation in place 🔧):** Routed LLM
+   (`src/llm/routed_llm.py`) = remote-GPU primary + local fallback + Wake-on-LAN
+   (`src/net/wol.py`); standalone services (`services/stt_server`, `tts_server`);
+   host presets (`src/presets.py`). Validated on the Mac (http STT round-trip,
+   routed fallback). Pending: real WoL wake of the Gaming PC + cross-host
+   benchmark rows once the NUC/GPU box are online.
 4. **Phase 3 — Home Assistant:** Wire the assistant into HA (Assist pipeline /
    intents) so voice can trigger automations.
 5. **Phase 4 — Edge:** Run the wake-word + audio front-end on an **ESP32-S3-Box**,

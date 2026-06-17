@@ -45,11 +45,35 @@ class Config:
     stt_model: str = _get("STT_MODEL", "base")
     stt_compute_type: str = _get("STT_COMPUTE_TYPE", "int8")
     stt_language: str = os.environ.get("STT_LANGUAGE", "de") or None  # type: ignore[assignment]
+    # Network STT service (STT_BACKEND=http) -- runs on another host (Phase 2 NUC).
+    stt_http_url: str = _get("STT_HTTP_URL", "http://localhost:9000")
+    # Parakeet candidate (STT_BACKEND=parakeet).
+    parakeet_model: str = _get("PARAKEET_MODEL", "mlx-community/parakeet-tdt-0.6b-v2")
 
     # LLM
     llm_backend: str = _get("LLM_BACKEND", "ollama")
     ollama_host: str = _get("OLLAMA_HOST", "http://localhost:11434")
     llm_model: str = _get("LLM_MODEL", "llama3.2:latest")
+    # Network LLM service (LLM_BACKEND=http) -- remote Ollama / llama.cpp / vLLM.
+    llm_http_url: str = _get("LLM_HTTP_URL", "http://localhost:11434")
+    llm_http_format: str = _get("LLM_HTTP_FORMAT", "ollama")  # ollama | openai
+    llm_http_api_key: str = _get("LLM_HTTP_API_KEY", "")
+    # Routed LLM (LLM_BACKEND=routed): remote-GPU primary with local fallback +
+    # Wake-on-LAN. The orchestrator is unchanged; only env differs (Phase 2).
+    llm_primary_url: str = _get("LLM_PRIMARY_URL", "http://gaming-pc:11434")
+    llm_primary_model: str = _get("LLM_PRIMARY_MODEL", "qwen2.5:7b")
+    llm_primary_format: str = _get("LLM_PRIMARY_FORMAT", "ollama")
+    llm_fallback_url: str = _get("LLM_FALLBACK_URL", "http://localhost:11434")
+    llm_fallback_model: str = _get("LLM_FALLBACK_MODEL", "llama3.2:latest")
+    llm_fallback_format: str = _get("LLM_FALLBACK_FORMAT", "ollama")
+    # Wake-on-LAN target for the primary (Gaming PC GPU box).
+    wol_mac: str = _get("WOL_MAC", "")
+    wol_host: str = _get("WOL_HOST", "gaming-pc")
+    wol_port: int = int(_get("WOL_PORT", "11434"))
+    wol_broadcast: str = _get("WOL_BROADCAST", "255.255.255.255")
+    wol_timeout_s: int = int(_get("WOL_TIMEOUT_S", "30"))
+    gpu_idle_suspend_min: int = int(_get("GPU_IDLE_SUSPEND_MIN", "15"))
+    gpu_suspend_ssh: str = _get("GPU_SUSPEND_SSH", "")  # e.g. user@gaming-pc
     system_prompt: str = _get(
         "SYSTEM_PROMPT",
         "Du bist ein knapper, freundlicher Sprachassistent. Antworte immer auf "
@@ -59,6 +83,9 @@ class Config:
 
     # TTS
     tts_backend: str = _get("TTS_BACKEND", "piper")
+    # Streaming: synthesize+play per sentence so audio starts before the LLM ends.
+    tts_streaming: bool = _get("TTS_STREAMING", "1") not in ("0", "false", "no")
+    tts_sentences_per_chunk: int = int(_get("TTS_SENTENCES_PER_CHUNK", "1"))
     say_voice: str = _get("SAY_VOICE", "Anna")
     piper_bin: str = _get("PIPER_BIN", "piper")
     piper_voice: str = _get("PIPER_VOICE", "voices/de_DE-thorsten-high.onnx")
@@ -99,6 +126,10 @@ class Config:
     robot_tremolo_depth: float = float(_get("ROBOT_TREMOLO_DEPTH", "0"))
     robot_comb_ms: float = float(_get("ROBOT_COMB_MS", "1.2"))
     robot_comb_gain: float = float(_get("ROBOT_COMB_GAIN", "0.3"))
+
+    # Control server (Phase 1 HTTP + WebSocket entry point)
+    server_host: str = _get("SERVER_HOST", "0.0.0.0")
+    server_port: int = int(_get("SERVER_PORT", "8010"))
 
 
 config = Config()

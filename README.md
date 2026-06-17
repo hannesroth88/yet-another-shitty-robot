@@ -1,11 +1,14 @@
-# robot — Phase 0 voice assistant prototype
+# robot — local voice assistant prototype
 
 `mic → STT → LLM → TTS → speaker`, running entirely on the local host.
 
-This is **Phase 0** from [AGENTS.md](./AGENTS.md): prove the end-to-end voice loop
-on the Mac (M1). Components are swappable behind interfaces so later phases can
-move STT/LLM/TTS onto different machines (Gaming PC GPU, NUC, etc.) and onto the
-ESP32-S3-Box / robot without rewriting the pipeline.
+**Phase 0** (end-to-end loop on the Mac) and **Phase 1** (service split: event-
+driven orchestrator, streaming TTS, HTTP/WS control server, network backends) are
+done; **Phase 2** (fleet distribution: routed LLM + Wake-on-LAN + standalone
+services) has its foundation in place (see [AGENTS.md](./AGENTS.md)). Components
+are swappable behind interfaces so STT/LLM/TTS can move onto different machines
+(Gaming PC GPU, NUC) and eventually the ESP32-S3-Box / robot without rewriting
+the pipeline.
 
 ## Architecture
 
@@ -14,25 +17,33 @@ src/
   config.py        # all settings (env / .env), nothing hardcoded
   latency.py       # per-stage latency timing (first-class metric)
   audio.py         # mic capture (ffmpeg) + playback (afplay)  [host-specific]
-  pipeline.py      # wires STT -> LLM -> TTS, stable seam for the fleet
-  main.py          # interactive push-to-talk loop
-  stt/  base interface + faster_whisper_stt.py
-  llm/  base interface + ollama_llm.py
-  tts/  base interface + say_tts.py (mac default) + piper_tts.py (fleet default)
-        + kokoro_tts.py + qwen3_tts.py
+  pipeline.py      # legacy synchronous wiring (Phase 0; kept for reference)
+  orchestrator.py  # Phase 1 event-driven orchestrator (phase machine + event bus)
+  presets.py       # fleet host presets -> .env snippets (Phase 2)
+  main.py          # interactive push-to-talk loop (client of the orchestrator)
+  text/            # sentence_chunker.py (stream tokens -> sentences)
+  net/             # wol.py (Wake-on-LAN + readiness probes)  [Phase 2]
+  server/          # app.py HTTP + WebSocket control server + static web face
+  stt/  base interface + faster_whisper_stt.py + parakeet_stt.py + http_stt.py
+  llm/  base interface + ollama_llm.py + http_llm.py + routed_llm.py
+  tts/  base interface + say_tts.py (mac) + piper_tts.py (fleet default)
+        + kokoro_tts.py + qwen3_tts.py + qwen3_mlx_tts.py + streaming.py
         effects.py + robot_tts.py  # optional robot-voice DSP layer
+services/          # Phase 2 standalone HTTP services (stt_server, tts_server)
 tools/
-  smoke.py         # non-interactive end-to-end test (no mic needed)
-utils/
-  voice_lab.py     # audition / tune the robot-voice effect (presets + live REPL)
+  smoke.py         # non-interactive end-to-end test (records first_audio_ms)
+  server_smoke.py  # WebSocket control-server smoke test
+  bench_report.py  # benchmarks.json -> benchmarks.html
+tests/             # unit tests (sentence chunker, Wake-on-LAN)
 ```
 
 Each of STT / LLM / TTS is selected by a `*_BACKEND` env var and built by a
-factory, so swapping an implementation never touches `pipeline.py` or `main.py`.
+factory, so swapping an implementation (or moving it to another host via the
+`http`/`routed` backends) never touches the orchestrator.
 
 ## Requirements
 
-- macOS (Phase 0 host). `ffmpeg` + `afplay` + `say` (all present on macOS).
+- macOS (dev host). `ffmpeg` + `afplay` + `say` (all present on macOS).
 - [Ollama](https://ollama.com) running with a model pulled:
   `ollama pull llama3.2`
 - Python 3.12 venv.
@@ -53,11 +64,18 @@ ffmpeg -f avfoundation -list_devices true -i ""
 
 ## Run
 
-Interactive voice loop:
+Interactive voice loop (streaming TTS speaks sentence 1 while the LLM writes
+sentence 2):
 
 ```bash
 .venv/bin/python -m src.main
 # Press Enter to talk, Enter again to stop. 'q' to quit.
+```
+
+Control server + web face (Phase 1 HTTP + WebSocket entry point):
+
+```bash
+.venv/bin/python -m src.server.app     # open http://localhost:8010
 ```
 
 Non-interactive smoke test (synthesizes a prompt with `say`, no mic required):
@@ -66,12 +84,34 @@ Non-interactive smoke test (synthesizes a prompt with `say`, no mic required):
 .venv/bin/python -m tools.smoke "What is the capital of France?"
 ```
 
+Tests:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v   # chunker + Wake-on-LAN
+.venv/bin/python -m tools.server_smoke              # control-server WS round-trip
+```
+
+### Fleet (Phase 2)
+
+Run a stage as a standalone service on another host, then point the orchestrator
+at it via env — no code change:
+
+```bash
+# on the always-on host (e.g. NUC):
+.venv/bin/python -m services.stt_server.app          # :9000 POST /transcribe
+# on the orchestrator host:
+STT_BACKEND=http STT_HTTP_URL=http://nuc:9000 .venv/bin/python -m src.main
+```
+
+Remote LLM on the Gaming-PC GPU with local fallback + Wake-on-LAN:
+`LLM_BACKEND=routed` (see `src/presets.py` → `nuc-gpu`, and `services/README.md`).
+
 Example output:
 
 ```
 you: What is the capital of France?
 bot: The capital of France is Paris.
-latency: stt 569ms | llm_first_token 200ms | llm_total 276ms | tts 667ms | TOTAL 1712ms
+latency: stt 569ms | llm 276ms | tts 667ms | (first_audio 410ms) | TOTAL 1712ms
 ```
 
 ## Latency benchmark log

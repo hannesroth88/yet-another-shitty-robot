@@ -1,7 +1,10 @@
-"""Phase 0 voice-assistant loop: mic -> whisper -> ollama -> tts -> speaker.
+"""Phase 1 voice-assistant loop: mic -> STT -> LLM -> TTS -> speaker.
+
+The CLI is now a *client* of the event-driven :class:`~src.orchestrator.Orchestrator`
+(streaming TTS speaks sentence 1 while the LLM is still writing sentence 2).
 
 Run from the repo root:  python -m src.main
-Press Enter to talk, Enter again to stop. Type 'q' + Enter (empty prompt) to quit.
+Press Enter to talk, Enter again to stop. Type 'q' + Enter to quit.
 """
 from __future__ import annotations
 
@@ -13,21 +16,41 @@ from .audio import default_output_device, play_wav, record_push_to_talk
 from .config import config
 from .latency import Timings
 from .llm import get_llm
-from .pipeline import Pipeline
+from .orchestrator import Event, Orchestrator
 from .stt import get_stt
 from .tts import get_tts
 
 
 def banner() -> None:
+    stream = "on" if config.tts_streaming else "off"
     print("=" * 64)
-    print(" Phase 0 voice assistant  (mic -> STT -> LLM -> TTS -> speaker)")
+    print(" Phase 1 voice assistant  (mic -> STT -> LLM -> TTS -> speaker)")
     print("-" * 64)
     print(f" STT : {config.stt_backend} ({config.stt_model})")
     print(f" LLM : {config.llm_backend} ({config.llm_model})")
-    print(f" TTS : {config.tts_backend}")
+    print(f" TTS : {config.tts_backend}  [streaming {stream}]")
     print(f" Mic : avfoundation device :{config.audio_input_device}")
     print(f" Out : {default_output_device()}  (afplay -> macOS default output)")
     print("=" * 64)
+
+
+def make_printer() -> "callable":
+    """A subscriber that renders orchestrator events to the console."""
+    state = {"spoke": False}
+
+    def on_event(ev: Event) -> None:
+        if ev.type == "heard_text":
+            print(f"  you : {ev.data['text']}")
+        elif ev.type == "assistant_end":
+            print(f"  bot : {ev.data['text']}")
+        elif ev.type == "tts_audio":
+            print(f"      ♪ {ev.data['text']}  ({ev.data['synth_ms']}ms)")
+        elif ev.type == "error":
+            print(f"  !! error: {ev.data['message']}", file=sys.stderr)
+        elif ev.type == "latency":
+            pass  # rendered from Timings below
+
+    return on_event
 
 
 def main() -> int:
@@ -41,7 +64,10 @@ def main() -> int:
         print(f"Startup failed: {exc}", file=sys.stderr)
         return 1
 
-    pipe = Pipeline(stt, llm, tts, config.system_prompt)
+    player = play_wav if config.tts_streaming else None
+    orch = Orchestrator(stt, llm, tts, config.system_prompt, player=player)
+    orch.subscribe(make_printer())
+
     tmp = Path(tempfile.mkdtemp(prefix="robot-"))
     print("Ready.\n")
 
@@ -58,23 +84,27 @@ def main() -> int:
         turn += 1
         t = Timings()
         wav_in = str(tmp / f"in_{turn}.wav")
-        wav_out = str(tmp / f"out_{turn}.wav")
 
         if not record_push_to_talk(wav_in):
             print("  (recording failed)\n")
             continue
 
-        text = pipe.transcribe(wav_in, t)
+        text = orch.transcribe(wav_in, t)
         if not text:
             print("  (heard nothing)\n")
             continue
-        print(f"  you : {text}")
 
-        reply = pipe.respond(text, t)
-        print(f"  bot : {reply}")
+        try:
+            reply = orch.respond(text, t, play=config.tts_streaming)
+        except Exception as exc:
+            print(f"  (turn failed: {exc})\n")
+            continue
 
-        pipe.speak(reply, wav_out, t)
-        play_wav(wav_out)
+        # Non-streaming mode: nothing played yet, so play the whole reply once.
+        if not config.tts_streaming and reply:
+            wav_out = str(tmp / f"out_{turn}.wav")
+            tts.synthesize(reply, wav_out)
+            play_wav(wav_out)
 
         print(f"  ⏱  {t.render()}\n")
 

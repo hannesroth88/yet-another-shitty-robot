@@ -20,4 +20,10 @@ def get_llm() -> LLM:
     if config.llm_backend == "ollama":
         from .ollama_llm import OllamaLLM
         return OllamaLLM()
+    if config.llm_backend == "http":
+        from .http_llm import HttpLLM
+        return HttpLLM()
+    if config.llm_backend == "routed":
+        from .routed_llm import RoutedLLM
+        return RoutedLLM()
     raise ValueError(f"Unknown LLM_BACKEND: {config.llm_backend}")
