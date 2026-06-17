@@ -15,8 +15,10 @@ def get_stt() -> STT:
         from .faster_whisper_stt import FasterWhisperSTT
         return FasterWhisperSTT()
     if config.stt_backend == "parakeet":
+        # MLX must run on one consistent thread; pin load+transcribe to it.
         from .parakeet_stt import ParakeetSTT
-        return ParakeetSTT()
+        from .pinned import PinnedSTT
+        return PinnedSTT(ParakeetSTT)
     if config.stt_backend == "http":
         from .http_stt import HttpSTT
         return HttpSTT()

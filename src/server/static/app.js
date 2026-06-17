@@ -55,7 +55,6 @@ function handle(m) {
       botText = m.text || botText; capEl.textContent = botText;
       break;
     case "tts_audio":
-      face.pulseMouth();
       playAudio(m.wav_path);
       break;
     case "latency":
@@ -79,9 +78,12 @@ function playAudio(path) {
 }
 function nextAudio() {
   const url = audioQ.shift();
-  if (!url) { playing = false; return; }
+  if (!url) { playing = false; face.setTalking(false); return; }
   playing = true;
   const a = new Audio(url);
+  // Start the mouth exactly when sound starts (keeps the face in sync); stop
+  // it when the whole queue has drained (the `if (!url)` branch above).
+  a.onplay = () => face.setTalking(true);
   a.onended = a.onerror = () => nextAudio();
   a.play().catch(() => nextAudio());
 }
@@ -117,6 +119,16 @@ promptEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendPrompt(
 let mediaRec = null, micChunks = [], micStream = null;
 const micBtn = document.getElementById("mic");
 
+function releaseMic() {
+  // Close the mic between turns. Holding it open puts the browser/OS in
+  // "communication" mode (echo-cancellation), which ducks the speaker so you
+  // can't hear the robot's own TTS. Push-to-talk re-acquires on next press.
+  if (micStream) {
+    micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+  }
+}
+
 function mediaError(kind, e) {
   // Translate the opaque getUserMedia failures into something actionable.
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -141,7 +153,7 @@ async function toggleMic() {
     console.warn(msg); flash(capEl, msg); return;
   }
   try {
-    micStream = micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
     const msg = mediaError("\uD83C\uDFA4 mic", e);
     console.warn("getUserMedia(audio) failed:", e); flash(capEl, msg); return;
@@ -154,6 +166,7 @@ async function toggleMic() {
   mediaRec.onstop = async () => {
     micBtn.classList.remove("rec");
     const blob = new Blob(micChunks, { type: micChunks[0]?.type || "audio/webm" });
+    releaseMic();  // close the mic so TTS playback isn't ducked by AEC
     if (blob.size && wsReady) ws.send(await blob.arrayBuffer());
   };
   mediaRec.start();

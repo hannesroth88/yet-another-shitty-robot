@@ -86,7 +86,7 @@ class Hub:
     def orchestrator(self) -> Orchestrator:
         with self._build_lock:
             if self._orch is None:
-                orch = Orchestrator(None, get_llm(), get_tts(),
+                orch = Orchestrator(None, get_llm(), get_tts(thread_safe=True),
                                     config.system_prompt, player=None)
                 orch.subscribe(self.broadcast)
                 self._orch = orch
@@ -418,6 +418,18 @@ def serve(host: str | None = None, port: int | None = None) -> None:
         try:
             print(f"  [prewarm] STT: loading {config.stt_backend} model...")
             HUB._ensure_stt()
+            # Warm the JIT with a short silent clip so the first real turn is
+            # fast (~150ms) instead of paying one-time graph compilation.
+            try:
+                import wave
+                wp = tempfile.mktemp(suffix=".wav", prefix="robot-stt-warm-")
+                with wave.open(wp, "wb") as w:
+                    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+                    w.writeframes(b"\x00" * 16000 * 2)  # 1s silence
+                HUB._stt.transcribe(wp)
+                Path(wp).unlink(missing_ok=True)
+            except Exception:
+                pass
             print("  [prewarm] STT: ready.")
         except Exception as exc:  # noqa: BLE001
             print(f"  [prewarm] STT: skipped — {exc}")

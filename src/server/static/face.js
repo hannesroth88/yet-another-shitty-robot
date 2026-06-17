@@ -17,7 +17,7 @@ const EXPR = {
   inactive: { lid: 0.5, browY: 2, browTilt: 0, pupil: [0, 2], mouthOpen: 0.05, mouthCurve: 0.18, glow: 0.3 },
   listening:{ lid: 0.06, browY: -4, browTilt: 0, pupil: [0, 0], mouthOpen: 0.1, mouthCurve: 0.3, glow: 0.75 },
   thinking: { lid: 0.12, browY: -10, browTilt: 0.5, pupil: [7, -6], mouthOpen: 0.07, mouthCurve: 0.08, glow: 0.6 },
-  speaking: { lid: 0.04, browY: -2, browTilt: 0, pupil: [0, 0], mouthOpen: 0.42, mouthCurve: 0.2, glow: 1.0 },
+  speaking: { lid: 0.04, browY: -2, browTilt: 0, pupil: [0, 0], mouthOpen: 0.08, mouthCurve: 0.2, glow: 1.0 },
   error:    { lid: 0.28, browY: 8, browTilt: -0.9, pupil: [0, 3], mouthOpen: 0.16, mouthCurve: -0.5, glow: 0.5 },
 };
 
@@ -34,6 +34,7 @@ class RobotFace {
     this.phase = "inactive";
     this.blink = 0;          // 0..1 transient blink amount
     this.talk = 0;           // talking mouth oscillation amplitude
+    this._talking = false;   // gated on ACTUAL audio playback (see setTalking)
     this.drift = [0, 0];     // idle pupil drift
     this._nextBlink = performance.now() + 2000;
     this._nextDrift = performance.now() + 1500;
@@ -44,9 +45,16 @@ class RobotFace {
   setPhase(phase) {
     if (!EXPR[phase]) return;
     this.phase = phase;
+    // Safety net: never keep the mouth moving once we leave the speaking phase.
+    if (phase !== "speaking") this._talking = false;
     const e = EXPR[phase];
     this.t = { ...e, pupil: [...e.pupil] };
   }
+
+  // Drive the talking mouth from real audio playback (app.js calls this on the
+  // <audio> element's play event, and false when the queue drains), so the
+  // mouth is in sync with the sound instead of the earlier `speaking` phase.
+  setTalking(on) { this._talking = !!on; }
 
   pulseMouth() { this._mouthPulse = 1; }
 
@@ -116,8 +124,8 @@ class RobotFace {
       this.drift = [(Math.random()-0.5)*r, (Math.random()-0.5)*r*0.6];
       this._nextDrift = ts + 1400 + Math.random()*2600;
     }
-    // talking mouth: oscillation while speaking, plus per-chunk pulses
-    if (this.phase === "speaking") {
+    // talking mouth: oscillation while audio is actually playing, plus pulses
+    if (this._talking) {
       this.talk = 0.5 + 0.5*Math.abs(Math.sin(ts/90));
     } else {
       this.talk = lerp(this.talk, 0, 0.1);

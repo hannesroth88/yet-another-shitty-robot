@@ -60,19 +60,43 @@ cmd_start() {
     cmd_status; exit 1
   fi
 
-  # Phone needs a secure context for the mic; default HTTPS. Faithful to .env
-  # otherwise so crashes reproduce as-is.
-  export SERVER_TLS="${SERVER_TLS:-1}"
+  # .env is the source of truth (config-over-code): config.py reads it, so the
+  # launcher does NOT re-export pipeline config (TTS_BACKEND, STT_*, PORT).
+  # It only injects operational/debug env and explicit --flags (which win
+  # because config.py uses os.environ.setdefault -> a real env var beats .env).
   export PYTHONUNBUFFERED=1
   export PYTHONFAULTHANDLER=1
-  # Piper is the stable+snappy default; --tts worker brings back the qwen3 voice.
-  export TTS_BACKEND="${TTS_BACKEND:-piper}"
+  # TLS: honor .env/flag if set; otherwise default ON (the phone mic needs a
+  # secure context). This is the one phone-UX default, and .env can override it.
+  if [ -z "${SERVER_TLS:-}" ] && ! grep -qE '^[[:space:]]*SERVER_TLS=' .env 2>/dev/null; then
+    export SERVER_TLS=1
+  fi
+  # The qwen3-mlx -> worker Metal-safety now lives in the app (src/tts), so
+  # TTS_BACKEND=qwen3-mlx OR worker in .env both work with no footgun.
+
+  # Ask the app for the *effective* config (reads .env) so the banner is honest.
+  eval "$("$PY" - <<'PYEOF' 2>/dev/null
+from src.config import config
+print(f"EFF_TTS={config.tts_backend}")
+print(f"EFF_TLS={1 if config.server_tls else 0}")
+print(f"EFF_PORT={config.server_port}")
+print(f"EFF_WORKER={config.tts_worker_backend}")
+PYEOF
+)"
+  export SERVER_TLS="${EFF_TLS:-${SERVER_TLS:-1}}"
+  PORT="${EFF_PORT:-$PORT}"
 
   local ts log; ts="$(date +%Y%m%d-%H%M%S)"; log="$LOG_DIR/server-$ts.log"
   ln -sf "server-$ts.log" "$LATEST"
 
   echo "============================================================"
-  echo " robot server   SERVER_TLS=$SERVER_TLS  TTS_BACKEND=$TTS_BACKEND  port=$PORT"
+  local tts_show="$EFF_TTS"
+  if [ "$EFF_TTS" = "worker" ]; then
+    tts_show="worker(${EFF_WORKER:-qwen3-mlx})"
+  elif [ "$EFF_TTS" = "qwen3-mlx" ] || [ "$EFF_TTS" = "qwen3" ]; then
+    tts_show="$EFF_TTS (worker-isolated)"
+  fi
+  echo " robot server   SERVER_TLS=$SERVER_TLS  TTS_BACKEND=$tts_show  port=$PORT"
   echo "   log : $log  (also $LATEST)"
   cmd_url
   echo "============================================================"

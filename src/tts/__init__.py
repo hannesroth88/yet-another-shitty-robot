@@ -18,7 +18,14 @@ class TTS(Protocol):
         ...
 
 
-def _make_backend() -> TTS:
+def _make_backend(thread_safe: bool = False) -> TTS:
+    # MLX/Metal engines segfault when driven from the server's per-turn worker
+    # threads, so in a multi-threaded host (the control server) isolate them in
+    # the persistent worker process automatically -- the user can set
+    # TTS_BACKEND=qwen3-mlx in .env and it just works, no footgun.
+    if thread_safe and config.tts_backend in ("qwen3-mlx", "qwen3_mlx", "qwen3"):
+        from .worker_tts import WorkerTTS
+        return WorkerTTS(config.tts_backend)
     if config.tts_backend == "say":
         from .say_tts import SayTTS
         return SayTTS()
@@ -40,8 +47,8 @@ def _make_backend() -> TTS:
     raise ValueError(f"Unknown TTS_BACKEND: {config.tts_backend}")
 
 
-def get_tts() -> TTS:
-    backend = _make_backend()
+def get_tts(thread_safe: bool = False) -> TTS:
+    backend = _make_backend(thread_safe)
     # Optional voice effect, applied on top of any backend (engine-agnostic).
     if config.tts_effect == "robot":
         from .robot_tts import RobotTTS

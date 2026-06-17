@@ -311,6 +311,27 @@ is the quality option.) Footnote on placement: this also clarified the
 job is the LLM (via the Phase-2 Wake-on-LAN routing), while STT/TTS/orchestrator
 stay on the always-on host.
 
+### STT: dropping Whisper for Parakeet (and the same Metal-thread trap)
+
+Whisper `large-v3-turbo` was accurate but slow on the M1 — ~3.6s per turn, which
+is the whole latency budget. Swapped in **NVIDIA Parakeet TDT 0.6b v3** (the
+multilingual release — 25 European languages incl. German) on MLX: **~150ms warm,
+~25x faster**, with equal-or-better German transcripts (it nailed the test clip
+word-for-word). It was already half-wired as a Phase-1 candidate; only the model
+ID needed bumping v2(English)→v3(multilingual).
+
+But switching engines re-tripped the Metal-thread trap from the TTS saga: the
+first time I actually *spoke* to the robot, MLX threw `no stream gpu in current
+thread`. Same root cause — the control server spawns a fresh thread per turn, so
+the model loaded on the prewarm thread but transcribed on a turn thread, and
+MLX keeps a per-thread GPU stream. This time it's a recoverable exception, not a
+segfault, so the fix is lighter than the TTS subprocess: `PinnedSTT`
+(`src/stt/pinned.py`) runs the backend's *load and every transcribe* on one
+dedicated single-thread executor. The server also warms the JIT with a 1s silent
+clip at startup so the first real turn is ~150ms, not ~420ms. Lesson, twice over:
+**any MLX/Metal model must be touched from a single consistent thread** — pin it
+(STT, recoverable) or isolate it in a process (TTS, segfault-prone).
+
 ### The ESP32 firmware
 
 `firmware/esp32_face_led/` — an Arduino sketch (arduinoWebSockets + ArduinoJson +
