@@ -22,6 +22,14 @@ class HostPreset:
 
 # Fill MACs/IPs as hosts are provisioned. Models reflect the VRAM reality check
 # in AGENTS.md (8 GB GPU -> 7-8B @ Q4; NUC/Mac -> 3B fallback).
+#
+# Model guide (June 2026, German voice assistant):
+#   gemma4:12b   — 7.6 GB, best German quality, ~28-35 t/s on M1 Pro  ← Mac default
+#   gemma4:e4b   — 9.6 GB, MoE ~4B active, fastest option, good German
+#   gemma4:26b   — 18 GB, MoE 26B/~4B active, top German quality (needs 24 GB+)
+#   qwen2.5:14b  — 8.5 GB, strong multilingual alternative
+#   qwen2.5:7b   — 4.5 GB, NUC fallback (CPU-only, fits 32 GB DDR4)
+#   llama3.2:3b  — 2.0 GB, NUC fallback when memory is tight
 PRESETS: dict[str, HostPreset] = {
     "mac-local": HostPreset(
         name="Mac M1 (all-local)",
@@ -30,7 +38,7 @@ PRESETS: dict[str, HostPreset] = {
             "STT_BACKEND": "faster-whisper",
             "LLM_BACKEND": "ollama",
             "OLLAMA_HOST": "http://localhost:11434",
-            "LLM_MODEL": "llama3.2:latest",
+            "LLM_MODEL": "gemma4:12b",
             "TTS_BACKEND": "qwen3-mlx",
             "TTS_STREAMING": "1",
         },
@@ -47,9 +55,9 @@ PRESETS: dict[str, HostPreset] = {
             "TTS_STREAMING": "1",
             "LLM_BACKEND": "routed",
             "LLM_PRIMARY_URL": "http://gaming-pc:11434",
-            "LLM_PRIMARY_MODEL": "qwen2.5:7b",
+            "LLM_PRIMARY_MODEL": "qwen2.5:7b",   # Gaming PC, 8 GB VRAM
             "LLM_FALLBACK_URL": "http://localhost:11434",
-            "LLM_FALLBACK_MODEL": "llama3.2:3b",
+            "LLM_FALLBACK_MODEL": "qwen2.5:7b",    # NUC fallback (32 GB DDR4)
             "WOL_MAC": "AA:BB:CC:DD:EE:FF",   # <-- set the Gaming PC NIC MAC
             "WOL_HOST": "gaming-pc",
             "WOL_PORT": "11434",
@@ -67,7 +75,7 @@ PRESETS: dict[str, HostPreset] = {
             "TTS_STREAMING": "1",
             "LLM_BACKEND": "ollama",
             "OLLAMA_HOST": "http://localhost:11434",
-            "LLM_MODEL": "llama3.2:3b",
+            "LLM_MODEL": "qwen2.5:7b",           # NUC: 32 GB DDR4, fits easily
         },
     ),
     "distributed-stt-tts": HostPreset(

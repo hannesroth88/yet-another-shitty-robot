@@ -89,7 +89,7 @@
       "total_ms": 20320,
       "notes": "smoke run. Testing Qwen3-TTS (long German ~70 words, non-streaming). Full text buffered before output. Qwen3-TTS streams well for robots but 17s shows need for streaming implementation.",
       "coldstart_ms": null,
-      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erzählen und dich bei vielen Aufgaben unterstützen. Meine Stimme klingt vielleicht etwas künstlich, aber genau das macht mich zu einem echten kleinen Roboter."
+      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erz\u00e4hlen und dich bei vielen Aufgaben unterst\u00fctzen. Meine Stimme klingt vielleicht etwas k\u00fcnstlich, aber genau das macht mich zu einem echten kleinen Roboter."
     },
     {
       "date": "2026-06-17",
@@ -107,7 +107,7 @@
       "total_ms": 25742,
       "notes": "COLD run (model load). Testing Qwen3-TTS (long German ~70 words, non-streaming).",
       "coldstart_ms": 2222,
-      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erzählen und dich bei vielen Aufgaben unterstützen. Meine Stimme klingt vielleicht etwas künstlich, aber genau das macht mich zu einem echten kleinen Roboter."
+      "prompt_text": "Hallo! Ich bin Tinker, dein kleiner Roboterfreund. Ich freue mich darauf, mit dir zu sprechen und gemeinsam spannende Dinge zu entdecken. Ich kann Fragen beantworten, Geschichten erz\u00e4hlen und dich bei vielen Aufgaben unterst\u00fctzen. Meine Stimme klingt vielleicht etwas k\u00fcnstlich, aber genau das macht mich zu einem echten kleinen Roboter."
     },
     {
       "date": "2026-06-17",
@@ -218,9 +218,28 @@
       "tts_ms": 3474,
       "first_audio_ms": 4727,
       "total_ms": 6423,
-      "notes": "Parakeet TDT 0.6b v3 (MLX) — multilingual German. ~25x faster STT than faster-whisper large-v3-turbo (147ms warm), near-perfect German transcript. parakeet-mlx; Apple Silicon path.",
+      "notes": "Parakeet TDT 0.6b v3 (MLX) \u2014 multilingual German. ~25x faster STT than faster-whisper large-v3-turbo (147ms warm), near-perfect German transcript. parakeet-mlx; Apple Silicon path.",
       "coldstart_ms": null,
-      "prompt_text": "Erzähl mir einen kurzen Witz."
+      "prompt_text": "Erz\u00e4hl mir einen kurzen Witz."
+    },
+    {
+      "date": "2026-06-18",
+      "timestamp": "2026-06-18T00:13:10",
+      "environment": "Mac M1 Pro",
+      "accel": "Metal (LLM) / CPU (STT)",
+      "stt_config": "parakeet-tdt-0.6b-v3 (mlx)",
+      "stt_ms": 875,
+      "llm_model": "gemma4:12b",
+      "llm_quant": "?",
+      "llm_first_token_ms": 25468,
+      "llm_ms": 25950,
+      "tts_config": "worker",
+      "tts_ms": 37304,
+      "first_audio_ms": 63255,
+      "total_ms": 64129,
+      "notes": "COLD run (model load).",
+      "coldstart_ms": null,
+      "prompt_text": "Wie lautet die Hauptstadt von Frankreich? Antworte in einem kurzen Satz."
     }
   ]
 }

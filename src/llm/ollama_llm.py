@@ -18,6 +18,7 @@ class OllamaLLM:
             "model": self.model,
             "messages": messages,
             "stream": True,
+            "think": False,          # disable CoT/thinking mode (Gemma4, Qwen3, etc.)
             "options": {"temperature": 0.7},
         }
         req = urllib.request.Request(
