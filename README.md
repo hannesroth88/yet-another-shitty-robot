@@ -19,6 +19,7 @@ src/
   stt/  base interface + faster_whisper_stt.py
   llm/  base interface + ollama_llm.py
   tts/  base interface + say_tts.py (mac default) + piper_tts.py (fleet default)
+        + kokoro_tts.py + qwen3_tts.py
         effects.py + robot_tts.py  # optional robot-voice DSP layer
 tools/
   smoke.py         # non-interactive end-to-end test (no mic needed)
@@ -108,7 +109,7 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
 | `STT_BACKEND` / `STT_MODEL` | `faster-whisper` / `base` | `tiny`/`base`/`small`/`medium` |
 | `LLM_BACKEND` / `LLM_MODEL` | `ollama` / `llama3.2:latest` | any Ollama model |
 | `OLLAMA_HOST` | `http://localhost:11434` | point at a remote host later (e.g. woken Gaming PC) |
-| `TTS_BACKEND` | `say` | `say` (mac), `piper` (fleet), or `kokoro` (German Martin) |
+| `TTS_BACKEND` | `say` | `say` (mac), `piper` (fleet), `kokoro` (German Martin), `qwen3` (quality) |
 
 ## Swapping components (preview of later phases)
 
@@ -142,6 +143,17 @@ All knobs live in `env.example` (copy to `.env`). Highlights:
   voice name, speed, lang) are in `.env`. The robot effect below still applies
   on top — `TTS_BACKEND=kokoro` + `TTS_EFFECT=robot` chains Kokoro → robot
   filter.
+- **Use Qwen3-TTS** (best German naturalness / expressiveness on capable HW):
+  install optional deps, warm up once, then set `TTS_BACKEND=qwen3`.
+
+  ```bash
+  .venv/bin/pip install qwen-tts torch
+  .venv/bin/python -m utils.fetch_qwen3   # downloads model to HF cache + writes voices/qwen3-smoke.wav
+  ```
+
+  Default config targets `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`. Tune with
+  `QWEN3_*` vars in `.env` (model, device map, dtype, language, speaker,
+  optional clone mode with reference audio).
 - **Bigger/smaller STT:** change `STT_MODEL`.
 
 ## Robot voice effect
@@ -150,8 +162,8 @@ The TTS output can be run through a local DSP layer (`src/tts/effects.py`,
 wrapped by `src/tts/robot_tts.py`) to give any backend a robot character. It is
 engine-agnostic and low-latency — the German always comes from the TTS voice;
 the robot sound is pure post-processing on top. Enable with `TTS_EFFECT=robot`.
-It works the same over `say`, `piper`, or `kokoro` (e.g. Kokoro Martin → robot
-filter is just `TTS_BACKEND=kokoro` + `TTS_EFFECT=robot`).
+It works the same over `say`, `piper`, `kokoro`, or `qwen3` (e.g. Kokoro Martin
+→ robot filter is just `TTS_BACKEND=kokoro` + `TTS_EFFECT=robot`).
 
 Key knobs (all in `env.example` / `.env`):
 
@@ -171,8 +183,8 @@ Key knobs (all in `env.example` / `.env`):
 
 A standalone tool to find your sound without touching the loop. It synthesizes
 German text with the configured TTS backend, applies the robot effect, and plays
-it. Ships with presets (`dry`, `classic`, `android`, `computer`, `dalek`,
-`mechanical`, `tiny`) and lets you override any parameter or tune live.
+it. Ships with presets (`dry`, `classic`, `mechanical`, `tiny`, `tiny_ring`) and
+lets you override any parameter or tune live.
 
 ```bash
 .venv/bin/python -m utils.voice_lab "Hallo Welt" --preset tiny   # one preset

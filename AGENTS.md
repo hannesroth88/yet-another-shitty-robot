@@ -69,7 +69,10 @@ embedded device + a physical robot.
   ESP32 side: on-device wake word (e.g. microWakeWord) + stream audio out.
 - **LLM:** **Ollama** as the serving layer (simple API, model management, runs on
   Mac/x86/CUDA). Models: Llama 3.1 8B / Qwen2.5 7B class at Q4 for the 8 GB GPU.
-- **TTS:** **Piper** (fast, local, good quality, runs everywhere) as default.
+- **TTS:** **Piper** (fast, local, good quality, runs everywhere) as default;
+  **Kokoro-82M German "Martin"** for CPU-only quality; **Qwen3-TTS** (0.6B/1.7B)
+  as the GPU / Apple-Silicon quality + native-streaming upgrade. See
+  [docs/adr/0001-german-realtime-tts-engine.md](docs/adr/0001-german-realtime-tts-engine.md).
 - **Orchestration:** a thin pipeline service that wires STT→LLM→TTS and exposes
   one entry point; component endpoints are configurable.
 - **Home Assistant:** integrate via HA's **Assist** pipeline / Wyoming protocol
@@ -143,8 +146,18 @@ Keep trying to lower the per-environment best total.
 
 ## Open questions / decisions to revisit
 
-- Final STT engine (whisper.cpp vs faster-whisper) per host.
+Committed decisions are recorded as ADRs in [docs/adr/](docs/adr/).
+
+- Final STT engine (whisper.cpp vs faster-whisper vs Parakeet TDT 0.6B) per host.
 - Transport between services (plain HTTP vs Wyoming vs gRPC). Leaning Wyoming for
   HA compatibility.
+- ~~German TTS engine~~ — decided in [ADR 0001](docs/adr/0001-german-realtime-tts-engine.md)
+  (Piper default / Kokoro CPU-only / Qwen3-TTS GPU+Apple-Silicon quality).
+- ~~STT/TTS worker language (Python vs Rust)~~ — decided in
+  [ADR 0002](docs/adr/0002-stt-tts-worker-runtime.md) (Python now, Rust opt-in later).
 - Wake-word engine on ESP32-S3-Box and how much runs on-device vs streamed.
 - Robot compute: does the robot host the front-end only, or also TTS/STT?
+
+
+## Additions
+Everything we do or decide documment in ./docs/article.md I will write a post about it.

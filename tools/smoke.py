@@ -48,8 +48,12 @@ def _record(environment: str, t: Timings, cold: bool) -> None:
         "llm_quant": "?",
         "llm_first_token_ms": round(t.info.get("llm_first_token", 0)),
         "llm_ms": round(t.stages.get("llm", 0)),
-        "tts_config": f"{config.tts_backend}"
-            + (f" ({config.say_voice})" if config.tts_backend == "say" else ""),
+        "tts_config": (
+            f"{config.tts_backend}"
+            + (f" ({config.say_voice})" if config.tts_backend == "say" else "")
+            + (f" ({config.qwen3_model.split('/')[-1]}:{config.qwen3_speaker})"
+               if config.tts_backend == "qwen3" else "")
+        ),
         "tts_ms": round(t.stages.get("tts", 0)),
         "total_ms": round(t.total()),
         "notes": "COLD run (model load)." if cold else "smoke run.",

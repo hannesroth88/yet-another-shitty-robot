@@ -8,6 +8,12 @@ criteria, and what we explicitly do **not** do yet. Plans build on the Phase-0
 seam (`src/pipeline.py` + `*_BACKEND` factories) and never hardcode host/model
 placement.
 
+Committed technical decisions live in [../docs/adr/](../docs/adr/) (ADRs). Notably
+[ADR 0001](../docs/adr/0001-german-realtime-tts-engine.md) settles the German TTS
+engine tiering (Piper / Kokoro / **Qwen3-TTS**) and
+[ADR 0002](../docs/adr/0002-stt-tts-worker-runtime.md) settles worker runtime
+(**Python now, Rust optional later**).
+
 | Plan | Phase | Status | Depends on |
 |------|-------|--------|------------|
 | [phase-1-service-split.md](./phase-1-service-split.md) | 1 — Service split | TODO | Phase 0 ✅ |
@@ -48,5 +54,6 @@ Model note: pibot defaults to **Gemma 3 26B A4B MoE Q4** (~8–10 GB unified mem
 great on the M1 Mac, **does not fit the 8 GB RTX 2080**. Our LLM targets stay
 **Llama 3.1 8B / Qwen2.5 7B / Qwen3 8B @ Q4** for the gaming box, with Gemma 3
 12B Q4 as an optional Mac-dev-parity model. STT: evaluate **Parakeet TDT 0.6B**
-against faster-whisper. TTS: keep **Piper** as fleet default, Qwen3-TTS as the
-Mac/GPU upgrade path.
+against faster-whisper. TTS: keep **Piper** as fleet default, **Kokoro** for
+CPU-only quality, **Qwen3-TTS** as the Mac/GPU quality + native-streaming upgrade
+(see [ADR 0001](../docs/adr/0001-german-realtime-tts-engine.md)).

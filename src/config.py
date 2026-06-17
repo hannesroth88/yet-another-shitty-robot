@@ -69,6 +69,18 @@ class Config:
     kokoro_speed: float = float(_get("KOKORO_SPEED", "1.0"))
     kokoro_lang: str = _get("KOKORO_LANG", "de")
 
+    # Qwen3-TTS (quality/streaming-oriented backend; optional heavy deps)
+    qwen3_model: str = _get("QWEN3_MODEL", "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice")
+    qwen3_device_map: str = _get("QWEN3_DEVICE_MAP", "auto")
+    qwen3_dtype: str = _get("QWEN3_DTYPE", "auto")
+    qwen3_attn_implementation: str = _get("QWEN3_ATTN_IMPLEMENTATION", "auto")
+    qwen3_mode: str = _get("QWEN3_MODE", "custom")  # custom | clone
+    qwen3_language: str = _get("QWEN3_LANGUAGE", "German")
+    qwen3_speaker: str = _get("QWEN3_SPEAKER", "Ryan")
+    qwen3_instruct: str = _get("QWEN3_INSTRUCT", "")
+    qwen3_ref_audio: str = _get("QWEN3_REF_AUDIO", "voices/robot-ref.wav")
+    qwen3_ref_text: str = _get("QWEN3_REF_TEXT", "")
+
     # Voice effect (DSP applied on top of any TTS backend)
     tts_effect: str = _get("TTS_EFFECT", "none")  # none | robot
     robot_phase_strength: float = float(_get("ROBOT_PHASE_STRENGTH", "1.0"))

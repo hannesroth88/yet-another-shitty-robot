@@ -51,8 +51,16 @@ src/
   tts/
     say_tts.py             # mac default
     piper_tts.py           # fleet default
+    kokoro_tts.py          # CPU-only quality pick (German Martin)
+    qwen3_tts.py           # NEW: quality + native-streaming upgrade (GPU/Apple Silicon)
     streaming.py           # NEW: StreamingTTS protocol (push text -> yield PCM)
 ```
+
+> **TTS engine choice is settled in [ADR 0001](../docs/adr/0001-german-realtime-tts-engine.md):**
+> Piper = cross-arch default, Kokoro = CPU-only quality, **Qwen3-TTS = GPU /
+> Apple-Silicon quality + native streaming**. Phase 1 adds the `qwen3` backend so
+> its native streaming feeds the chunker on capable hosts; it stays opt-in via
+> `TTS_BACKEND=qwen3` and won't run on the NUC/NAS/edge.
 
 `http_stt` / `http_llm` are how a service "moves to another host" in Phase 2:
 flip `LLM_BACKEND=http` + `LLM_HTTP_URL=http://gaming-pc:11434/...` in `.env`.
@@ -66,8 +74,17 @@ class StreamingTTS(Protocol):
         """Consume text as it arrives, yield PCM frames as they synthesize."""
 ```
 
-Non-streaming engines (`say`, base Piper) are wrapped to satisfy this by
+Non-streaming engines (`say`, base Piper, Kokoro) are wrapped to satisfy this by
 synthesizing per sentence chunk. Piper can stream sentence-by-sentence today.
+**Qwen3-TTS streams natively** (audio starts before a sentence is fully
+synthesized), so it plugs straight into this protocol without a per-sentence wrap
+— the lowest `first_audio_ms` of any backend on a capable host.
+
+> **Worker boundary vs. worker language** are separate decisions — see
+> [ADR 0002](../docs/adr/0002-stt-tts-worker-runtime.md). We adopt pibot's
+> *worker pattern* (long-running STT/TTS process, stdio/socket framing, per-user
+> VAD state) but stay in **Python**; a Rust worker is an opt-in per-component
+> optimization only if a benchmark proves Python is the limiter on a host.
 
 ### Sentence chunker (steal from pibot)
 
@@ -112,6 +129,8 @@ smoke still works); full mic streaming lands with the web face.
 2. `src/tts/streaming.py` protocol + Piper streaming adapter + `say` wrapper.
 3. `src/llm/http_llm.py`, `src/stt/http_stt.py` (network backends).
 4. `src/stt/parakeet_stt.py` (candidate; behind `STT_BACKEND=parakeet`).
+4b. `src/tts/qwen3_tts.py` (behind `TTS_BACKEND=qwen3`) + `QWEN3_*` config; use
+    the streaming protocol natively. Benchmark per host (Mac M1, gaming PC).
 5. `src/orchestrator.py` with phase state machine + event bus.
 6. `src/server/app.py` control server (HTTP + WS), serving a placeholder page.
 7. CLI (`src/main.py`) refactored to be a client of the orchestrator events.
@@ -126,8 +145,12 @@ LLM_BACKEND=ollama|http
 LLM_HTTP_URL=http://localhost:11434
 STT_BACKEND=faster-whisper|parakeet|http
 STT_HTTP_URL=http://localhost:9000
-TTS_BACKEND=say|piper            # piper now streams per-sentence
+TTS_BACKEND=say|piper|kokoro|qwen3   # piper streams per-sentence; qwen3 streams natively
 TTS_STREAMING=1
+# Qwen3-TTS (quality/streaming upgrade; GPU or Apple Silicon w/ MLX)
+QWEN3_MODEL=Qwen/Qwen3-TTS-0.6B      # 1.7B on hosts with the memory
+QWEN3_DEVICE=mps                     # mps (Mac) | cuda (RTX) | cpu
+QWEN3_VOICE_REF=voices/robot-ref.wav # ~30s reference for voice cloning
 
 # Control server
 SERVER_HOST=0.0.0.0

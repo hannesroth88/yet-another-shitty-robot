@@ -1,7 +1,9 @@
 """TTS interface + factory.
 
 Phase 0 default is macOS `say` (zero-dependency, works today). `piper` is the
-cross-platform fleet default and is selected via TTS_BACKEND=piper. See AGENTS.md.
+cross-platform fleet default and is selected via TTS_BACKEND=piper. Optional
+quality backends: `kokoro` (CPU-friendly German) and `qwen3` (heavier, best
+naturalness on capable GPU/Apple-Silicon hosts). See AGENTS.md.
 """
 from __future__ import annotations
 
@@ -26,6 +28,9 @@ def _make_backend() -> TTS:
     if config.tts_backend == "kokoro":
         from .kokoro_tts import KokoroTTS
         return KokoroTTS()
+    if config.tts_backend == "qwen3":
+        from .qwen3_tts import Qwen3TTS
+        return Qwen3TTS()
     raise ValueError(f"Unknown TTS_BACKEND: {config.tts_backend}")
 
 

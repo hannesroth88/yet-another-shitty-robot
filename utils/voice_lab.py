@@ -107,7 +107,7 @@ def _render(text: str, params: dict[str, float], backend, out_path: str) -> None
 def main() -> None:
     p = argparse.ArgumentParser(description="Audition TTS robot-voice presets.")
     p.add_argument("text", nargs="?", default=DEFAULT_TEXT, help="text to speak")
-    p.add_argument("--preset", choices=list(PRESETS), default="tiny_mix")
+    p.add_argument("--preset", choices=list(PRESETS), default="tiny")
     p.add_argument("--all", action="store_true", help="play every preset in sequence")
     p.add_argument("--interactive", "-i", action="store_true", help="loop: type lines to re-synth")
     p.add_argument("--save", metavar="WAV", help="save to this file instead of a temp file")

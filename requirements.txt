@@ -7,3 +7,7 @@ faster-whisper>=1.0.0
 # Optional: German Kokoro "Martin" TTS backend (TTS_BACKEND=kokoro)
 # kokoro-onnx
 # huggingface_hub
+
+# Optional: Qwen3-TTS backend (TTS_BACKEND=qwen3)
+# qwen-tts
+# torch
