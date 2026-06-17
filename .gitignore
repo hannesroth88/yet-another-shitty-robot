@@ -7,6 +7,6 @@ voices/
 *.onnx
 *.onnx.json
 
-docs/article.mdcerts/
+docs/article.md
 logs/
 certs/

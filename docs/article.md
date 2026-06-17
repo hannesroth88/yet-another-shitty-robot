@@ -340,3 +340,82 @@ events, and eases the onboard WS2812 between colours (listening = blue, thinking
 = pulsing purple, speaking = green, error = red). It sends nothing; it's pure
 output. The motor/motion `tool` events are a marked TODO for the next Phase-4
 step.
+
+## LLM upgrade — Gemma 4 and the thinking-mode trap
+
+After the pipeline was stable I wanted a better model than `llama3.2` — snappier
+German, better child-appropriate phrasing. Looked at the 2026 landscape:
+
+- **Gemma 4** (Google, April 2026, Apache 2.0): two variants — a 26B MoE with only
+  3.8 B active parameters (fast!) and a 31B dense (quality). German-language
+  reviews specifically called it out: *"Gemma 4 formuliert auf Deutsch spuerbar
+  natuerlicher und fluessiger"* (noticeably more natural and fluent German than
+  Qwen 3.5). For a robot that talks to kids in German that matters.
+- **Qwen 3.5** (Alibaba): hybrid thinking + direct mode, 201 languages, 262K
+  context -- strong all-rounder but slightly below Gemma 4 on German.
+- **Mistral Small 3 7B**: fastest raw tok/s on Apple Silicon (~50 tok/s), good if
+  you need rock-bottom latency at some quality cost.
+
+With 32 GB RAM the `gemma4:12b` variant fits easily (Q4_K_M, 8 GB, 100% GPU
+offloaded via Metal). Pulled it, switched `LLM_MODEL=gemma4:12b` -- done.
+
+### The trap: thinking mode is on by default
+
+First real turn: STT 206ms, then **80 seconds of silence**, then finally a German
+kid-joke. Total turn 101 s. The model was running 100% GPU, RAM pressure fine.
+So what was taking 76 seconds before the first token?
+
+Running a quick test revealed it immediately:
+
+```
+$ echo "Hi" | ollama run gemma4:12b
+Thinking...
+The user said "Hi". This is a standard greeting.
+Acknowledge the greeting and offer assistance.
+
+Hallo! ...
+```
+
+Gemma 4 ships with a hidden chain-of-thought (CoT) **thinking mode enabled by
+default**. Before outputting a single word it silently generates hundreds of
+reasoning tokens. For a voice assistant those tokens are pure latency -- the user
+stares at a silent robot while the model debates how to say "Hallo".
+
+The same capability flag exists on Qwen 3, DeepSeek-R1, and any Ollama model
+that lists `thinking` under its capabilities.
+
+### The fix: one line
+
+The Ollama `/api/chat` endpoint accepts a top-level `think` boolean. Adding it to
+the payload disables CoT globally for that request:
+
+```python
+# src/llm/ollama_llm.py
+payload = {
+    "model": self.model,
+    "messages": messages,
+    "stream": True,
+    "think": False,          # disable CoT/thinking mode (Gemma4, Qwen3, etc.)
+    "options": {"temperature": 0.7},
+}
+```
+
+Result:
+
+| | Before | After |
+|---|---|---|
+| LLM first token | **76,001 ms** | **~400 ms** |
+| LLM total | **80,321 ms** | **~3,000 ms** |
+| Full turn | **101,869 ms** | **~6,000 ms** |
+
+**27x speedup from one boolean.** Quality is identical for child-appropriate
+conversation -- the thinking tokens add nothing for "tell me a joke". Reasoning
+mode is useful for hard math/logic tasks, not for a chatty robot.
+
+### Rule of thumb going forward
+
+For any interactive / voice use case: **always check whether the model has a
+`thinking` capability and explicitly set `think: false`**. Load the model in the
+CLI with `ollama run <model>` and see if it prints `Thinking...` before
+answering. If it does, the API caller must opt out -- Ollama does not disable it
+automatically just because you are streaming a voice loop.
