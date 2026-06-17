@@ -16,6 +16,9 @@ const promptEl = document.getElementById("prompt");
 
 let ws, wsReady = false, reconnectT = null;
 let botText = "";
+// "thinking" timer: from STT text (or a typed prompt) until the first sound
+// actually plays -- the wait the user perceives.
+let thinkAnchor = 0, thinkShown = false, lastThink = 0;
 
 function setPhase(p) { phaseEl.textContent = p; phaseEl.dataset.p = p; face.setPhase(p); }
 
@@ -47,6 +50,8 @@ function handle(m) {
       break;
     case "heard_text":
       capEl.textContent = m.text ? `“${m.text}”` : "";
+      // start the thinking clock the moment STT has produced text
+      thinkAnchor = performance.now(); thinkShown = false; lastThink = 0;
       break;
     case "assistant_delta":
       botText += m.text; capEl.textContent = botText;
@@ -83,7 +88,15 @@ function nextAudio() {
   const a = new Audio(url);
   // Start the mouth exactly when sound starts (keeps the face in sync); stop
   // it when the whole queue has drained (the `if (!url)` branch above).
-  a.onplay = () => face.setTalking(true);
+  a.onplay = () => {
+    face.setTalking(true);
+    if (!thinkShown && thinkAnchor) {
+      lastThink = Math.round(performance.now() - thinkAnchor);
+      thinkShown = true;
+      latEl.innerHTML = `🤔 think→speak <b>${lastThink}ms</b>`;
+      latEl.classList.add("on");
+    }
+  };
   a.onended = a.onerror = () => nextAudio();
   a.play().catch(() => nextAudio());
 }
@@ -92,6 +105,7 @@ function showLatency(m) {
   const s = m.stages || {}, i = m.info || {};
   const ms = (v) => v ? Math.round(v) + "ms" : "—";
   latEl.innerHTML =
+    (lastThink ? `🤔 <b>${lastThink}ms</b> · ` : "") +
     `STT <b>${ms(s.stt)}</b> · LLM <b>${ms(s.llm)}</b> · TTS <b>${ms(s.tts)}</b>` +
     (i.first_audio ? ` · 1st audio <b>${ms(i.first_audio)}</b>` : "") +
     ` · TOTAL <b>${m.total}ms</b>`;
@@ -110,6 +124,8 @@ function sendPrompt() {
   if (!t || !wsReady) return;
   ws.send(JSON.stringify({ type: "prompt", text: t }));
   capEl.textContent = `“${t}”`;
+  // typed prompts have no STT step; start the thinking clock from send
+  thinkAnchor = performance.now(); thinkShown = false; lastThink = 0;
   promptEl.value = "";
 }
 document.getElementById("send").addEventListener("click", sendPrompt);

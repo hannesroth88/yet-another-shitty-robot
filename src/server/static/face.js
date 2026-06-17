@@ -14,7 +14,7 @@ const VIEW = { w: 600, h: 420 };
 
 // Per-phase expression targets. Values are tweened toward.
 const EXPR = {
-  inactive: { lid: 0.5, browY: 2, browTilt: 0, pupil: [0, 2], mouthOpen: 0.05, mouthCurve: 0.18, glow: 0.3 },
+  inactive: { lid: 0.5, browY: 2, browTilt: 0, pupil: [0, 2], mouthOpen: 0.05, mouthCurve: 0.5, glow: 0.3 },
   listening:{ lid: 0.06, browY: -4, browTilt: 0, pupil: [0, 0], mouthOpen: 0.1, mouthCurve: 0.3, glow: 0.75 },
   thinking: { lid: 0.12, browY: -10, browTilt: 0.5, pupil: [7, -6], mouthOpen: 0.07, mouthCurve: 0.08, glow: 0.6 },
   speaking: { lid: 0.04, browY: -2, browTilt: 0, pupil: [0, 0], mouthOpen: 0.08, mouthCurve: 0.2, glow: 1.0 },
