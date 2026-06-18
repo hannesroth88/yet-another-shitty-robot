@@ -132,6 +132,32 @@ class Config:
     robot_comb_ms: float = float(_get("ROBOT_COMB_MS", "1.2"))
     robot_comb_gain: float = float(_get("ROBOT_COMB_GAIN", "0.3"))
 
+    # -- Real-time conversation pipeline (ADR 0003) --------------------
+    # Continuous mic + server VAD + streaming PCM TTS + client barge-in.
+    conversation_mode: bool = _get("CONVERSATION_MODE", "1") not in ("0", "false", "no", "")
+    conv_sample_rate: int = int(_get("CONV_SAMPLE_RATE", "16000"))
+    # VAD gate (energy default; silero opt-in).
+    vad_backend: str = _get("VAD_BACKEND", "energy")  # energy | silero
+    vad_frame_ms: int = int(_get("VAD_FRAME_MS", "32"))
+    vad_threshold: float = float(_get("VAD_THRESHOLD", "0.012"))  # RMS (energy backend)
+    vad_start_frames: int = int(_get("VAD_START_FRAMES", "3"))
+    vad_min_silence_ms: int = int(_get("VAD_MIN_SILENCE_MS", "800"))
+    vad_preroll_ms: int = int(_get("VAD_PREROLL_MS", "300"))
+    vad_max_utterance_ms: int = int(_get("VAD_MAX_UTTERANCE_MS", "15000"))
+    vad_silero_model: str = _get("VAD_SILERO_MODEL", "voices/silero_vad.onnx")
+    # Interim transcripts (drive stop-words / barge-in while the user speaks).
+    interim_interval_ms: int = int(_get("INTERIM_INTERVAL_MS", "250"))
+    interim_window_ms: int = int(_get("INTERIM_WINDOW_MS", "4000"))
+    interim_min_audio_ms: int = int(_get("INTERIM_MIN_AUDIO_MS", "400"))
+    # Streaming TTS PCM frame size pushed to the phone.
+    tts_pcm_frame_ms: int = int(_get("TTS_PCM_FRAME_MS", "40"))
+    # German/English stop-words that abort the robot mid-sentence.
+    stop_words: str = _get(
+        "STOP_WORDS",
+        "stop,stopp,halt,anhalten,abbrechen,schluss,ruhe,sei still,sei ruhig,"
+        "hör auf,hoer auf",
+    )
+
     # Control server (Phase 1 HTTP + WebSocket entry point)
     server_host: str = _get("SERVER_HOST", "0.0.0.0")
     server_port: int = int(_get("SERVER_PORT", "8010"))

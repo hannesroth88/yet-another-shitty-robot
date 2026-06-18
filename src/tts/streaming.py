@@ -21,10 +21,14 @@ from __future__ import annotations
 
 import tempfile
 import time
+import wave
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Iterator, Protocol, Tuple
 
+import numpy as np
+
+from ..config import config
 from ..text.sentence_chunker import SentenceChunker
 from . import TTS
 
@@ -94,3 +98,51 @@ def get_streaming_tts(backend: TTS, sentences_per_chunk: int = 1) -> StreamingTT
     if hasattr(backend, "stream") and callable(getattr(backend, "stream")):
         return backend  # type: ignore[return-value]
     return SentenceStreamingTTS(backend, sentences_per_chunk=sentences_per_chunk)
+
+
+def iter_sentence_pcm(
+    backend: TTS, sentence: str, frame_ms: int = 40
+) -> Tuple[int, Iterator[bytes], float]:
+    """Synthesize one sentence and stream it as raw PCM16LE mono frames.
+
+    Returns ``(sample_rate, frame_iterator, synth_ms)``. This is the transport
+    used to stream audio to the phone (ADR 0003, Phase B): the orchestrator
+    pushes these frames over the WebSocket and the browser schedules them with
+    the Web Audio API.
+
+    * Native-streaming backends (Qwen3-MLX ``stream_pcm``) yield real generator
+      chunks, so the first audio leaves before the whole sentence is done.
+    * Everything else (Piper / say / Kokoro) is synthesized to a WAV once and
+      sliced into frames -- still gapless and cross-sentence streamed.
+    """
+    native = getattr(backend, "stream_pcm", None)
+    if callable(native):
+        start = time.perf_counter()
+        sr, chunks = native(sentence)
+        synth_ms = (time.perf_counter() - start) * 1000.0
+        return sr, chunks, synth_ms
+
+    tmp = Path(tempfile.mktemp(suffix=".wav", prefix="robot-pcm-"))
+    start = time.perf_counter()
+    backend.synthesize(sentence, str(tmp))
+    synth_ms = (time.perf_counter() - start) * 1000.0
+    with wave.open(str(tmp), "rb") as w:
+        sr = w.getframerate()
+        ch = w.getnchannels()
+        sw = w.getsampwidth()
+        raw = w.readframes(w.getnframes())
+    tmp.unlink(missing_ok=True)
+
+    data = np.frombuffer(raw, dtype="<i2")
+    if sw == 2 and ch > 1:
+        data = data.reshape(-1, ch).mean(axis=1).astype("<i2")
+
+    frame_samples = max(1, int(sr * frame_ms / 1000))
+    pcm = data.tobytes()
+    bytes_per_frame = frame_samples * 2
+
+    def _frames() -> Iterator[bytes]:
+        for i in range(0, len(pcm), bytes_per_frame):
+            yield pcm[i : i + bytes_per_frame]
+
+    return sr, _frames(), synth_ms

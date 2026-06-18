@@ -419,3 +419,104 @@ For any interactive / voice use case: **always check whether the model has a
 CLI with `ollama run <model>` and see if it prints `Thinking...` before
 answering. If it does, the API caller must opt out -- Ollama does not disable it
 automatically just because you are streaming a voice loop.
+
+## Phase A/B/C — making it an actual conversation (no button, barge-in)
+
+Up to here the robot worked, but the interaction was a lie. You held a
+push-to-talk button, let go, waited, and a complete sentence came back as a WAV
+file the phone downloaded and played. That is a walkie-talkie, not a
+conversation. Two things bugged the kids immediately: the **gaps between
+sentences** ("why does it pause like that?") and the fact that you **can't
+interrupt it** — once it starts a 4-sentence answer you're stuck listening to
+all of it.
+
+I sat down, traced exactly where the time goes, and then ported the three
+mechanisms that make pibot feel alive. Wrote it up as
+[ADR 0003](adr/0003-realtime-conversation-pipeline.md) first, then implemented
+all of it.
+
+### Where the gaps actually came from
+
+I'd assumed the gaps were the LLM being slow. They weren't. The LLM streams
+fine. The problem was the **consumer loop** in the orchestrator: it was fully
+serial — synthesize sentence 1, play sentence 1, synthesize sentence 2, play
+sentence 2. While sentence 1 is playing, nothing is synthesizing sentence 2. So
+every sentence boundary costs you a full TTS synth time of silence. The more
+natural the LLM's punctuation, the *worse* it sounded, because more sentences =
+more gaps.
+
+And within a sentence there was no streaming at all: `PiperTTS` and the macOS
+`say` backend both call `subprocess.run(...)`, which only returns once the whole
+WAV is written. Even the Qwen3-MLX backend — whose underlying `model.generate()`
+is a *generator* that yields audio chunks as it produces them — was being
+wrapped in `list(...)`, which throws the streaming away and waits for the last
+chunk. I was paying for streaming-capable models and then buffering them by hand.
+
+### The three phases
+
+**Phase A — kill the button.** The phone now opens a single `AudioContext`,
+captures the mic continuously, resamples to 16 kHz PCM16 in an
+`onaudioprocess` callback, and streams raw frames to the server over a binary
+WebSocket. The server runs the voice-activity detection now, not the human
+finger: a per-client `StreamingSTT` (`src/stt/streaming.py`) gates frames
+through a VAD (`src/stt/vad.py` — a zero-dependency energy VAD by default,
+optional Silero ONNX), keeps a short preroll so it doesn't clip your first
+syllable, emits `interim` transcripts every 250 ms for live captions, and fires
+`final` after ~800 ms of silence. That `final` is what starts a turn. No button,
+and it reuses the existing `STT.transcribe` so I didn't have to touch Parakeet.
+
+**Phase B — stream the audio out, end to end.** I gave the orchestrator an
+`AudioSink` (start / pcm / done callbacks) and `iter_sentence_pcm()`, and taught
+the Qwen3-MLX backend a real `stream_pcm()` that stops wrapping the generator in
+`list()` and yields PCM frames as the model makes them. The server forwards
+those frames to the phone as binary WS messages (`tts_start{sample_rate}` →
+binary PCM → `tts_done`), and the phone schedules them gaplessly with the Web
+Audio API — `createBuffer`, convert Int16→Float32, and a `nextPlayTime`
+accumulator with an 80 ms jitter buffer so chunks butt up against each other
+seamlessly instead of each being a separate `<audio>` download. This one change
+fixes *both* problems: first audio starts after the first chunk of the first
+sentence, and there are no inter-sentence gaps because playback is a continuous
+scheduled stream, not a sequence of files.
+
+**Phase C — barge-in.** This is the bit that makes it feel human: you can talk
+over it. The naive approach (just keep the mic open while the robot talks) fails
+because the mic hears the robot's own voice from the speaker and treats it as
+you interrupting. Browser echo cancellation wasn't clean enough for STT, so I
+ported pibot's trick (`src/server/static/barge-in.js`): keep a ring buffer of
+the audio we're *playing*, and for each mic frame correlate the mic signal
+against that playback reference at delays of 20–420 ms to estimate how much of
+the mic energy is just the robot bleeding back in. Barge-in only fires when the
+mic is loud **and** the unexplained residual is high for several consecutive
+frames — i.e. you're really talking, not just picking up the speaker. When it
+fires, the client flushes the buffered mic preroll so the server transcribes
+your interruption from its true start, and sends `barge_in`. The orchestrator
+cancels cooperatively via a `threading.Event` the LLM and TTS loops check — no
+thread is killed, the partial reply is kept in history so context stays coherent
+— and stop-words ("stopp", "halt", "sei still") on the interim transcript abort
+instantly without even waiting for the full sentence.
+
+### Why a single shared AudioContext matters
+
+One subtle bug I hit: the barge-in correlation only works if the mic frames and
+the playback-reference frames are at the **same sample rate**. If mic capture and
+TTS playback live in separate `AudioContext`s with different rates, the
+correlation silently returns "all residual" and barge-in fires on the robot's
+own voice. The fix is to use **one** `AudioContext` for both capture and
+playback, and tap the *actual* output samples (via a pass-through
+`ScriptProcessor`) to feed the reference ring — so what you correlate against is
+literally what came out of the speaker.
+
+### What it cost / what's left
+
+The whole thing is behind a `CONVERSATION_MODE` flag; the old push-to-talk +
+WAV-download path still works as a fallback. I validated the Python end with
+lightweight fakes — VAD boundary detection, PCM framing, AudioSink streaming, and
+"cancel mid-stream truncates the turn" all pass — and confirmed the server boots,
+serves the new assets, and advertises `conversation_mode` in `/api/config`.
+
+What I *can't* validate from the dev box is the stuff that needs the real
+hardware loop: the phone mic into Silero, Qwen3-MLX `stream_pcm` on Metal, and —
+most importantly — the barge-in thresholds. The `0.018` mic-RMS / `0.62`
+residual / 5-frame defaults are pibot's numbers for his speaker and room; mine
+will need tuning against the actual octobot speaker and the phone mic before it
+feels right. That's the next on-hardware session.
