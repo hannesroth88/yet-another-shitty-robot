@@ -572,3 +572,23 @@ conversation engine reports talking stopped (`onTalking(false)`). The header
 status label still updates immediately; only the face is held in sync with what
 you actually hear. A new `speaking` phase (next turn / next segment) applies
 right away and clears any pending phase.
+
+## Fix: speaking mouth was two lines instead of a solid area
+
+The mouth `<path>` is a *closed* shape (`M … Q … Q … Z`) but was drawn with
+`fill: "none"`, so only its stroked outline showed. When the mouth opened to
+speak, the top-lip curve and bottom-lip curve separated and read as **two
+parallel lines** rather than an open mouth.
+
+Fix (`src/server/static/face.js`): give the mouth path a `fill` (same cyan as
+the stroke) so the enclosed region renders as one solid area, add
+`stroke-linejoin: round` for clean corners, and stop growing the stroke width
+with mouth openness (it was `8 + open*4`, which exaggerated the outline). The
+stroke is now a fixed thin edge that just rounds the filled shape — open speech
+is a single solid blob, idle is a thin solid bar.
+
+## Tweak: open mouth fill matches the lip lines
+
+The open-mouth fill was a dark inner color (`rgba(4,10,28,0.92)`) to mimic a real
+open mouth. Changed it to the same cyan as the lip lines (`#8be8ff`) so the
+inside reads as a solid colored area rather than a dark cavity.

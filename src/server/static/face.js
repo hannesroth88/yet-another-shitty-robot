@@ -15,8 +15,8 @@ const EXPR = {
     browY: 4,
     browTilt: 0.05,
     pupil: [0, 2],
-    mouthOpen: 0.08,
-    smile: 0.72,
+    mouthOpen: 0.2,
+    smile: 0.34,
     glow: 0.35,
   },
   listening: {
@@ -24,8 +24,8 @@ const EXPR = {
     browY: -6,
     browTilt: -0.06,
     pupil: [0, 0],
-    mouthOpen: 0.2,
-    smile: 0.34,
+    mouthOpen: 0.08,
+    smile: 0.88,
     glow: 0.8,
   },
   thinking: {
@@ -210,9 +210,10 @@ class RobotFace {
 
     this.mouth = mk("path", {
       d: "",
-      fill: "none",
+      fill: "#8be8ff",
       stroke: "#8be8ff",
-      "stroke-width": 9,
+      "stroke-width": 6,
+      "stroke-linejoin": "round",
       "stroke-linecap": "round",
       filter: `url(#${this._uid}-glow)`,
     });
@@ -299,20 +300,25 @@ class RobotFace {
     this.rBrow.setAttribute("y2", browBase + tilt);
 
     const talkOsc = this._talking ? 0.5 + 0.5 * Math.sin(ts / 105) : 0;
-    const open = this.s.mouthOpen + talkOsc * 0.52 + this._mouthPulse * 0.34;
-    const smile = this.s.smile - talkOsc * 0.06;
-    const halfW = 86 + talkOsc * 18;
+    const open = Math.min(1, this.s.mouthOpen + talkOsc * 0.9 + this._mouthPulse * 0.34);
+    const smile = this.s.smile;
+    // Width narrows slightly when open — keeps the oval proportions
+    const halfW = 84 - open * 10;
     const y = this.mouthY;
-    const controlY = y + smile * 34;
-    const bottom = y + open * 18;
+    // Upper lip: arches down as a smile at rest, lifts ABOVE baseline as mouth opens
+    const upperCtrl = y + smile * 32 * (1 - open) - open * 34;
+    // Lower lip: drops downward as mouth opens
+    const lowerCtrl = y + open * 54;
     const path = [
       `M ${cx - halfW} ${y}`,
-      `Q ${cx} ${controlY} ${cx + halfW} ${y}`,
-      `Q ${cx} ${bottom} ${cx - halfW} ${y}`,
+      `Q ${cx} ${upperCtrl} ${cx + halfW} ${y}`,
+      `Q ${cx} ${lowerCtrl} ${cx - halfW} ${y}`,
       "Z",
     ].join(" ");
     this.mouth.setAttribute("d", path);
-    this.mouth.setAttribute("stroke-width", 8 + open * 8);
+    // Fill the open mouth with the same color as the lip lines
+    this.mouth.setAttribute("fill", open > 0.18 ? "#8be8ff" : "none");
+    this.mouth.setAttribute("stroke-width", 6);
 
 
   }
