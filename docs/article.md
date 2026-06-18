@@ -520,3 +520,55 @@ most importantly — the barge-in thresholds. The `0.018` mic-RMS / `0.62`
 residual / 5-frame defaults are pibot's numbers for his speaker and room; mine
 will need tuning against the actual octobot speaker and the phone mic before it
 feels right. That's the next on-hardware session.
+
+## Face refresh: visor-style robot expression set
+
+The original SVG face worked, but it looked more like floating eyes than a
+robot head. I replaced it with a visor-style panel face in
+`src/server/static/face.js` while keeping the same public API so the rest of the
+web app (`app.js`) did not need changes.
+
+What changed:
+
+- New head shell + visor panel geometry (rounded frame, internal grid texture).
+- Rectangular eye modules with glow layers and square pupils.
+- Animated lids and brows still map to the same phases (`inactive`,
+  `listening`, `thinking`, `speaking`, `error`).
+- Mouth is now a filled path that morphs between smile/frown/open speech shapes
+  instead of only resizing a flat bar.
+- Status cheek LEDs pulse with phase glow to make idle/listening/speaking states
+  clearer from a distance.
+
+Behavior contracts that stayed stable:
+
+- `setPhase(...)` still drives phase expressions.
+- `setTalking(true|false)` still gates speech animation to real playback.
+- `pulseMouth()` still adds chunk-level talking twitches.
+
+Net result: same control logic, more intentional "robot face" styling.
+
+## Fix: face dropped to "inactive" on the last sentence while still speaking
+
+**Symptom:** at the very end of a reply, the avatar's face snapped to the
+*inactive* expression even though the speaker was still playing the final
+sentence.
+
+**Root cause — a client/server race, not an animation bug.** In
+`orchestrator.respond()` the phase is flipped back to `inactive` (push-to-talk)
+or `listening` (conversation) as soon as the **last sentence is synthesized**,
+and then `assistant_end` / `latency` / `phase` events are emitted. But in the
+browser the final WAV segment is still sitting in the playback queue (`audioQ`),
+playing. When the `phase=inactive` event arrived, `app.js` called
+`face.setPhase("inactive")`, which both forces `_talking = false` and switches
+the base expression — mid-sentence.
+
+**Fix (client-side, `src/server/static/app.js`):** defer any *non-speaking*
+face expression until local playback actually drains. `setPhase()` now parks the
+incoming phase in `pendingFacePhase` while audio is busy
+(`audioBusy()` = WAV queue still playing **or** `conv._isPlaying()` for streamed
+PCM) and keeps the face in `speaking`. The pending expression is applied via
+`applyPendingPhase()` when the WAV queue empties (`nextAudio`) or when the
+conversation engine reports talking stopped (`onTalking(false)`). The header
+status label still updates immediately; only the face is held in sync with what
+you actually hear. A new `speaking` phase (next turn / next segment) applies
+right away and clears any pending phase.

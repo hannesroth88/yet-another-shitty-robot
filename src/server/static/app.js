@@ -22,7 +22,36 @@ let conv = null;
 // actually plays -- the wait the user perceives.
 let thinkAnchor = 0, thinkShown = false, lastThink = 0;
 
-function setPhase(p) { phaseEl.textContent = p; phaseEl.dataset.p = p; face.setPhase(p); if (conv) conv.setServerPhase(p); }
+// The face expression must not drop out of "speaking" while local audio is
+// still playing: the server flips the phase back to inactive/listening as soon
+// as the LAST sentence is *synthesized*, but the browser is still playing that
+// segment out of the queue. Defer the non-speaking expression until playback
+// actually drains so the avatar stays in sync with what you hear.
+let pendingFacePhase = null;
+
+function audioBusy() {
+  if (playing || audioQ.length) return true;          // WAV segment queue
+  if (conv && conv._isPlaying()) return true;          // streamed PCM (conv mode)
+  return false;
+}
+
+function applyPendingPhase() {
+  if (pendingFacePhase !== null && !audioBusy()) {
+    face.setPhase(pendingFacePhase);
+    pendingFacePhase = null;
+  }
+}
+
+function setPhase(p) {
+  phaseEl.textContent = p; phaseEl.dataset.p = p;
+  if (conv) conv.setServerPhase(p);
+  if (p !== "speaking" && audioBusy()) {
+    pendingFacePhase = p;  // hold the face in "speaking" until playback drains
+    return;
+  }
+  pendingFacePhase = null;
+  face.setPhase(p);
+}
 
 function connect() {
   const wsScheme = location.protocol === "https:" ? "wss" : "ws";
@@ -106,7 +135,7 @@ function playAudio(path) {
 }
 function nextAudio() {
   const url = audioQ.shift();
-  if (!url) { playing = false; face.setTalking(false); return; }
+  if (!url) { playing = false; face.setTalking(false); applyPendingPhase(); return; }
   playing = true;
   const a = new Audio(url);
   // Start the mouth exactly when sound starts (keeps the face in sync); stop
@@ -168,7 +197,7 @@ async function toggleConversation() {
   if (!conv) {
     conv = new Conversation({
       send, sendBinary,
-      onTalking: (on) => face.setTalking(on),
+      onTalking: (on) => { face.setTalking(on); if (!on) applyPendingPhase(); },
     });
   }
   if (conv.isActive()) {
