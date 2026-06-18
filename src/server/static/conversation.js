@@ -91,7 +91,11 @@ class Conversation {
 
   setServerPhase(phase) {
     this.serverPhase = phase;
-    if (phase === "listening" && this.detector) this.detector.resetStreaming();
+    // Drop the latched barge-streaming flag once the user's interruption is
+    // over: either we are back to plain listening, or the robot has begun a new
+    // turn ("thinking"). Otherwise the flag stays stuck and the client keeps
+    // streaming the robot's own voice back to the server.
+    if (this.detector && (phase === "listening" || phase === "thinking")) this.detector.resetStreaming();
   }
 
   /* ---- inbound TTS PCM (binary frames) ---- */

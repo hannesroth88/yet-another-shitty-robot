@@ -167,6 +167,7 @@ class Hub:
             self._start_turn(client, ev.text)
 
     def _start_turn(self, client: "Client", text: str) -> None:
+        self._barge_pending = False  # consumed; don't let it misfire later
         def run() -> None:
             # The just-cancelled turn may still be releasing the lock; wait
             # briefly rather than dropping a barge-in utterance.

@@ -247,6 +247,10 @@ class Orchestrator:
                 self.history.append({"role": "assistant", "content": reply})
             log.info("LLM  ▶  (cancelled) %r", reply)
             self._emit("assistant_end", text=reply, cancelled=True)
+            # IMPORTANT: a cancel is a barge-in -- the user is talking. Drop back
+            # to HEARING (not stuck at SPEAKING) so the next final is accepted as
+            # a real turn instead of being discarded as echo.
+            self._set_phase(Phase.HEARING if audio_sink is not None else Phase.INACTIVE)
             return reply
         self.history.append({"role": "assistant", "content": reply})
         log.info("LLM  ▶  %r  (%.0fms, first token %.0fms)",
