@@ -592,3 +592,17 @@ is a single solid blob, idle is a thin solid bar.
 The open-mouth fill was a dark inner color (`rgba(4,10,28,0.92)`) to mimic a real
 open mouth. Changed it to the same cyan as the lip lines (`#8be8ff`) so the
 inside reads as a solid colored area rather than a dark cavity.
+
+## Revert to circle eyes, keep the solid-color mouth
+
+Went back to the round-eye avatar (circular sockets + glowing iris + sliding
+eyelids) since it read better than the rectangular visor. Kept the mouth
+improvement: the open mouth fills solid with `var(--face)` — the same color as
+the lip lines — instead of the old translucent tint (`rgba(126,224,255,0.18)`).
+
+## Mouth: shorter + always-solid inner fill
+
+Two tweaks: narrowed the mouth (`mw` 150 → 104) so it isn't so wide, and made
+the inner mouth fill solid (`var(--face)`) in every phase — previously only
+filled when open past a threshold, so inactive/listening showed a hollow
+outline. Now the mouth reads as a solid colored shape in all states.

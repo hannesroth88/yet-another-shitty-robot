@@ -1,58 +1,62 @@
-/* face.js - visor-style SVG robot avatar.
+/* face.js — SVG robot avatar: eyes, pupils, eyebrows, mouth.
  *
- * Public API remains compatible with app.js:
+ * A tiny tween engine animates between per-phase expression targets, with idle
+ * micro-behaviours (blink, pupil drift) so it feels alive, and a talking mouth
+ * gated by the `speaking` phase. No dependencies, no framework.
+ *
+ * Public API:
  *   const face = new RobotFace(svgEl);
  *   face.setPhase("thinking" | "listening" | "speaking" | "error" | "inactive");
- *   face.setTalking(true | false);
- *   face.pulseMouth();
+ *   face.pulseMouth();   // call on each tts_audio chunk for a talking twitch
  */
 
 const VIEW = { w: 600, h: 420 };
 
+// Per-phase expression targets. Values are tweened toward.
 const EXPR = {
   inactive: {
-    lid: 0.46,
-    browY: 4,
-    browTilt: 0.05,
+    lid: 0.5,
+    browY: 2,
+    browTilt: 0,
     pupil: [0, 2],
-    mouthOpen: 0.2,
-    smile: 0.34,
-    glow: 0.35,
+    mouthOpen: 0.1,
+    mouthCurve: 0.3,
+    glow: 0.3,
   },
   listening: {
-    lid: 0.08,
-    browY: -6,
-    browTilt: -0.06,
+    lid: 0.06,
+    browY: -4,
+    browTilt: 0,
     pupil: [0, 0],
-    mouthOpen: 0.08,
-    smile: 0.88,
-    glow: 0.8,
+    mouthOpen: 0.05,
+    mouthCurve: 0.5,
+    glow: 0.75,
   },
   thinking: {
-    lid: 0.2,
+    lid: 0.12,
     browY: -10,
-    browTilt: 0.36,
-    pupil: [10, -7],
-    mouthOpen: 0.06,
-    smile: 0.02,
-    glow: 0.62,
+    browTilt: 0.5,
+    pupil: [7, -6],
+    mouthOpen: 0.07,
+    mouthCurve: 0.08,
+    glow: 0.6,
   },
   speaking: {
-    lid: 0.05,
+    lid: 0.04,
     browY: -2,
     browTilt: 0,
     pupil: [0, 0],
-    mouthOpen: 0.34,
-    smile: 0.22,
-    glow: 1,
+    mouthOpen: 0.08,
+    mouthCurve: 0.2,
+    glow: 1.0,
   },
   error: {
-    lid: 0.34,
+    lid: 0.28,
     browY: 8,
-    browTilt: -0.7,
-    pupil: [0, 4],
-    mouthOpen: 0.04,
-    smile: -0.52,
+    browTilt: -0.9,
+    pupil: [0, 3],
+    mouthOpen: 0.16,
+    mouthCurve: -0.5,
     glow: 0.5,
   },
 };
@@ -63,30 +67,33 @@ class RobotFace {
   constructor(svg) {
     this.svg = svg;
     svg.setAttribute("viewBox", `0 0 ${VIEW.w} ${VIEW.h}`);
-    this._uid = `rf${Math.random().toString(36).slice(2, 9)}`;
     this._build();
-
+    // current + target state
     this.s = { ...EXPR.inactive, pupil: [...EXPR.inactive.pupil] };
     this.t = { ...EXPR.inactive, pupil: [...EXPR.inactive.pupil] };
-
     this.phase = "inactive";
-    this.blink = 0;
-    this._talking = false;
+    this.blink = 0; // 0..1 transient blink amount
+    this.talk = 0; // talking mouth oscillation amplitude
+    this._talking = false; // gated on ACTUAL audio playback (see setTalking)
+    this.drift = [0, 0]; // idle pupil drift
+    this._nextBlink = performance.now() + 2000;
+    this._nextDrift = performance.now() + 1500;
     this._mouthPulse = 0;
-    this.drift = [0, 0];
-    this._nextBlink = performance.now() + 1900;
-    this._nextDrift = performance.now() + 1300;
     requestAnimationFrame((ts) => this._loop(ts));
   }
 
   setPhase(phase) {
     if (!EXPR[phase]) return;
     this.phase = phase;
+    // Safety net: never keep the mouth moving once we leave the speaking phase.
     if (phase !== "speaking") this._talking = false;
     const e = EXPR[phase];
     this.t = { ...e, pupil: [...e.pupil] };
   }
 
+  // Drive the talking mouth from real audio playback (app.js calls this on the
+  // <audio> element's play event, and false when the queue drains), so the
+  // mouth is in sync with the sound instead of the earlier `speaking` phase.
   setTalking(on) {
     this._talking = !!on;
   }
@@ -95,6 +102,7 @@ class RobotFace {
     this._mouthPulse = 1;
   }
 
+  // -- build SVG nodes -------------------------------------------------
   _build() {
     const NS = "http://www.w3.org/2000/svg";
     const mk = (tag, attrs) => {
@@ -102,145 +110,138 @@ class RobotFace {
       for (const k in attrs) n.setAttribute(k, attrs[k]);
       return n;
     };
-
     const defs = mk("defs", {});
-    defs.innerHTML = `<filter id="${this._uid}-glow" x="-80%" y="-80%" width="260%" height="260%">
-         <feGaussianBlur stdDeviation="5" result="g"/>
-         <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    defs.innerHTML = `<filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+         <feGaussianBlur stdDeviation="6" result="b"/>
+         <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
        </filter>`;
     this.svg.appendChild(defs);
 
-    this.eye = { y: 165, x: 146, w: 168, h: 110, r: 28 };
-    this.mouthY = 306;
-
-    // Eye shells are dark sockets (no border) — also used as clip shapes for lids
-    const eyeShellAttrs = (side) => ({
-      x: VIEW.w / 2 + side * this.eye.x - this.eye.w / 2,
-      y: this.eye.y - this.eye.h / 2,
-      width: this.eye.w, height: this.eye.h, rx: this.eye.r,
-      fill: "#0a1226",
+    const EY = 170,
+      EX = 150,
+      ER = 78; // eye geometry
+    this.eyeGeom = { EY, EX, ER };
+    // eye sockets (dark) + iris (glow)
+    this.lEye = mk("circle", {
+      cx: VIEW.w / 2 - EX,
+      cy: EY,
+      r: ER,
+      fill: "#0a1428",
     });
-    this.lEyeShell = mk("rect", eyeShellAttrs(-1));
-    this.rEyeShell = mk("rect", eyeShellAttrs(1));
-
-    // Clip lids to the rounded eye-shell shape so corners are always round
-    const makeClip = (id, side) => {
-      const cp = mk("clipPath", { id });
-      cp.appendChild(mk("rect", eyeShellAttrs(side)));
-      return cp;
-    };
-    defs.appendChild(makeClip(`${this._uid}-clipL`, -1));
-    defs.appendChild(makeClip(`${this._uid}-clipR`,  1));
-
-    this.lEyeGlow = mk("rect", {
-      x: VIEW.w / 2 - this.eye.x - this.eye.w / 2 + 10,
-      y: this.eye.y - this.eye.h / 2 + 10,
-      width: this.eye.w - 20,
-      height: this.eye.h - 20,
-      rx: 20,
+    this.rEye = mk("circle", {
+      cx: VIEW.w / 2 + EX,
+      cy: EY,
+      r: ER,
+      fill: "#0a1428",
+    });
+    this.lIris = mk("circle", {
+      cx: VIEW.w / 2 - EX,
+      cy: EY,
+      r: 40,
       fill: "var(--face)",
-      opacity: 0.7,
-      filter: `url(#${this._uid}-glow)`,
+      filter: "url(#glow)",
     });
-    this.rEyeGlow = mk("rect", {
-      x: VIEW.w / 2 + this.eye.x - this.eye.w / 2 + 10,
-      y: this.eye.y - this.eye.h / 2 + 10,
-      width: this.eye.w - 20,
-      height: this.eye.h - 20,
-      rx: 20,
+    this.rIris = mk("circle", {
+      cx: VIEW.w / 2 + EX,
+      cy: EY,
+      r: 40,
       fill: "var(--face)",
-      opacity: 0.7,
-      filter: `url(#${this._uid}-glow)`,
+      filter: "url(#glow)",
     });
-
-    this.lPupil = mk("rect", {
-      x: 0,
-      y: 0,
-      width: 36,
-      height: 36,
-      rx: 11,
-      fill: "#050b18",
-      stroke: "#7ee0ff",
-      "stroke-width": 1,
+    this.lPup = mk("circle", {
+      cx: VIEW.w / 2 - EX,
+      cy: EY,
+      r: 16,
+      fill: "#040a18",
     });
-    this.rPupil = mk("rect", {
-      x: 0,
-      y: 0,
-      width: 36,
-      height: 36,
-      rx: 11,
-      fill: "#050b18",
-      stroke: "#7ee0ff",
-      "stroke-width": 1,
+    this.rPup = mk("circle", {
+      cx: VIEW.w / 2 + EX,
+      cy: EY,
+      r: 16,
+      fill: "#040a18",
     });
-
+    // eyelids (rects that slide down to blink/half-close)
     this.lLid = mk("rect", {
-      x: VIEW.w / 2 - this.eye.x - this.eye.w / 2,
-      y: this.eye.y - this.eye.h / 2,
-      width: this.eye.w, height: 0, fill: "#0a1226",
-      "clip-path": `url(#${this._uid}-clipL)`,
+      x: VIEW.w / 2 - EX - ER,
+      y: EY - ER,
+      width: 2 * ER,
+      height: 2 * ER,
+      fill: "#0b1020",
     });
     this.rLid = mk("rect", {
-      x: VIEW.w / 2 + this.eye.x - this.eye.w / 2,
-      y: this.eye.y - this.eye.h / 2,
-      width: this.eye.w, height: 0, fill: "#0a1226",
-      "clip-path": `url(#${this._uid}-clipR)`,
+      x: VIEW.w / 2 + EX - ER,
+      y: EY - ER,
+      width: 2 * ER,
+      height: 2 * ER,
+      fill: "#0b1020",
     });
-
+    // eyebrows (lines)
     this.lBrow = mk("line", {
-      x1: VIEW.w / 2 - this.eye.x - 64,
-      y1: this.eye.y - 92,
-      x2: VIEW.w / 2 - this.eye.x + 64,
-      y2: this.eye.y - 92,
-      stroke: "#88ebff",
-      "stroke-width": 10,
+      x1: VIEW.w / 2 - EX - 55,
+      y1: EY - 95,
+      x2: VIEW.w / 2 - EX + 55,
+      y2: EY - 95,
+      stroke: "var(--face)",
+      "stroke-width": 12,
       "stroke-linecap": "round",
-      filter: `url(#${this._uid}-glow)`,
+      filter: "url(#glow)",
     });
     this.rBrow = mk("line", {
-      x1: VIEW.w / 2 + this.eye.x - 64,
-      y1: this.eye.y - 92,
-      x2: VIEW.w / 2 + this.eye.x + 64,
-      y2: this.eye.y - 92,
-      stroke: "#88ebff",
-      "stroke-width": 10,
+      x1: VIEW.w / 2 + EX - 55,
+      y1: EY - 95,
+      x2: VIEW.w / 2 + EX + 55,
+      y2: EY - 95,
+      stroke: "var(--face)",
+      "stroke-width": 12,
       "stroke-linecap": "round",
-      filter: `url(#${this._uid}-glow)`,
+      filter: "url(#glow)",
     });
-
+    // mouth (path)
     this.mouth = mk("path", {
       d: "",
-      fill: "#8be8ff",
-      stroke: "#8be8ff",
-      "stroke-width": 6,
-      "stroke-linejoin": "round",
+      fill: "none",
+      stroke: "var(--face)",
+      "stroke-width": 12,
       "stroke-linecap": "round",
-      filter: `url(#${this._uid}-glow)`,
+      "stroke-linejoin": "round",
+      filter: "url(#glow)",
     });
+
     [
-      this.lEyeShell,
-      this.rEyeShell,
-      this.lEyeGlow,
-      this.rEyeGlow,
-      this.lPupil,
-      this.rPupil,
+      this.lEye,
+      this.rEye,
+      this.lIris,
+      this.rIris,
+      this.lPup,
+      this.rPup,
+      this.lLid,
+      this.rLid,
       this.lBrow,
       this.rBrow,
       this.mouth,
-    ].forEach(el => this.svg.appendChild(el));
-    // Lids appended last so they paint over the eye glow
-    this.svg.appendChild(this.lLid);
-    this.svg.appendChild(this.rLid);
+    ].forEach((n) => this.svg.appendChild(n));
+
+    // clip lids to their eye circles so they look like eyelids
+    const clipL = mk("clipPath", { id: "clipL" });
+    clipL.appendChild(this.lEye.cloneNode());
+    const clipR = mk("clipPath", { id: "clipR" });
+    clipR.appendChild(this.rEye.cloneNode());
+    defs.appendChild(clipL);
+    defs.appendChild(clipR);
+    this.lLid.setAttribute("clip-path", "url(#clipL)");
+    this.rLid.setAttribute("clip-path", "url(#clipR)");
   }
 
+  // -- per-frame update ------------------------------------------------
   _loop(ts) {
-    const k = 0.12;
+    const k = 0.12; // tween speed
+    // ease scalar fields toward target
     for (const key of [
       "lid",
       "browY",
       "browTilt",
       "mouthOpen",
-      "smile",
+      "mouthCurve",
       "glow",
     ]) {
       this.s[key] = lerp(this.s[key], this.t[key], k);
@@ -248,79 +249,86 @@ class RobotFace {
     this.s.pupil[0] = lerp(this.s.pupil[0], this.t.pupil[0] + this.drift[0], k);
     this.s.pupil[1] = lerp(this.s.pupil[1], this.t.pupil[1] + this.drift[1], k);
 
+    // idle behaviours
     if (ts > this._nextBlink) {
       this.blink = 1;
-      this._nextBlink = ts + 2200 + Math.random() * 3400;
+      this._nextBlink = ts + 2200 + Math.random() * 3500;
     }
     this.blink = Math.max(0, this.blink - 0.14);
-
     if (ts > this._nextDrift) {
-      const range = this.phase === "speaking" ? 0 : 14;
-      this.drift = [
-        (Math.random() - 0.5) * range,
-        (Math.random() - 0.5) * range * 0.6,
-      ];
-      this._nextDrift = ts + 1200 + Math.random() * 2200;
+      const r = this.phase === "speaking" ? 0 : 14;
+      this.drift = [(Math.random() - 0.5) * r, (Math.random() - 0.5) * r * 0.6];
+      this._nextDrift = ts + 1400 + Math.random() * 2600;
     }
+    // talking mouth: oscillation while audio is actually playing, plus pulses
+    if (this._talking) {
+      this.talk = 0.5 + 0.5 * Math.abs(Math.sin(ts / 90));
+    } else {
+      this.talk = lerp(this.talk, 0, 0.1);
+    }
+    this._mouthPulse = Math.max(0, this._mouthPulse - 0.08);
 
-    this._mouthPulse = Math.max(0, this._mouthPulse - 0.09);
-
-    this._render(ts);
+    this._render();
     requestAnimationFrame((t) => this._loop(t));
   }
 
-  _render(ts) {
+  _render() {
+    const { EY, EX, ER } = this.eyeGeom;
     const cx = VIEW.w / 2;
+    // pupils + iris follow gaze
     const [px, py] = this.s.pupil;
-    const eyeY = this.eye.y;
-    const pupilSize = 36;
-
-    const eyeLeftX = cx - this.eye.x;
-    const eyeRightX = cx + this.eye.x;
-    this.lPupil.setAttribute("x", eyeLeftX - pupilSize / 2 + px * 1.25);
-    this.lPupil.setAttribute("y", eyeY - pupilSize / 2 + py * 1.25);
-    this.rPupil.setAttribute("x", eyeRightX - pupilSize / 2 + px * 1.25);
-    this.rPupil.setAttribute("y", eyeY - pupilSize / 2 + py * 1.25);
-
-    const glowOpacity = 0.45 + 0.5 * this.s.glow;
-    this.lEyeGlow.setAttribute("opacity", glowOpacity);
-    this.rEyeGlow.setAttribute("opacity", glowOpacity);
-
+    for (const [iris, pup, sign] of [
+      [this.lIris, this.lPup, -1],
+      [this.rIris, this.rPup, 1],
+    ]) {
+      const ex = cx + sign * EX;
+      iris.setAttribute("cx", ex + px);
+      iris.setAttribute("cy", EY + py);
+      pup.setAttribute("cx", ex + px * 1.4);
+      pup.setAttribute("cy", EY + py * 1.4);
+      iris.setAttribute("opacity", 0.55 + 0.45 * this.s.glow);
+    }
+    // eyelids: lid (0 open .. 1 closed) + transient blink
     const closed = Math.min(1, this.s.lid + this.blink);
-    const lidH = this.eye.h * closed;
-    const lidTop = eyeY - this.eye.h / 2;
-    this.lLid.setAttribute("height", lidH);
-    this.rLid.setAttribute("height", lidH);
-
-    const browBase = eyeY - 92 + this.s.browY;
-    const tilt = this.s.browTilt * 28;
-    this.lBrow.setAttribute("y1", browBase + tilt);
-    this.lBrow.setAttribute("y2", browBase - tilt);
-    this.rBrow.setAttribute("y1", browBase - tilt);
-    this.rBrow.setAttribute("y2", browBase + tilt);
-
-    const talkOsc = this._talking ? 0.5 + 0.5 * Math.sin(ts / 105) : 0;
-    const open = Math.min(1, this.s.mouthOpen + talkOsc * 0.9 + this._mouthPulse * 0.34);
-    const smile = this.s.smile;
-    // Width narrows slightly when open — keeps the oval proportions
-    const halfW = 84 - open * 10;
-    const y = this.mouthY;
-    // Upper lip: arches down as a smile at rest, lifts ABOVE baseline as mouth opens
-    const upperCtrl = y + smile * 32 * (1 - open) - open * 34;
-    // Lower lip: drops downward as mouth opens
-    const lowerCtrl = y + open * 54;
-    const path = [
-      `M ${cx - halfW} ${y}`,
-      `Q ${cx} ${upperCtrl} ${cx + halfW} ${y}`,
-      `Q ${cx} ${lowerCtrl} ${cx - halfW} ${y}`,
-      "Z",
-    ].join(" ");
-    this.mouth.setAttribute("d", path);
-    // Fill the open mouth with the same color as the lip lines
-    this.mouth.setAttribute("fill", open > 0.18 ? "#8be8ff" : "none");
-    this.mouth.setAttribute("stroke-width", 6);
-
-
+    for (const [lid, sign] of [
+      [this.lLid, -1],
+      [this.rLid, 1],
+    ]) {
+      const ex = cx + sign * EX;
+      const h = 2 * ER * closed;
+      lid.setAttribute("x", ex - ER);
+      lid.setAttribute("y", EY - ER);
+      lid.setAttribute("width", 2 * ER);
+      lid.setAttribute("height", h);
+    }
+    // eyebrows: vertical offset + tilt (tilt sign mirrored per side)
+    const by = EY - 95 + this.s.browY;
+    const tilt = this.s.browTilt * 26;
+    this.lBrow.setAttribute("x1", cx - EX - 55);
+    this.lBrow.setAttribute("y1", by + tilt);
+    this.lBrow.setAttribute("x2", cx - EX + 55);
+    this.lBrow.setAttribute("y2", by - tilt);
+    this.rBrow.setAttribute("x1", cx + EX - 55);
+    this.rBrow.setAttribute("y1", by - tilt);
+    this.rBrow.setAttribute("x2", cx + EX + 55);
+    this.rBrow.setAttribute("y2", by + tilt);
+    // mouth: corners fixed at the baseline; the middle dips DOWN for a smile
+    // (mouthCurve > 0) or up for a frown (< 0). `open` adds talking aperture.
+    const my = 312,
+      mw = 104;
+    const open =
+      (this.s.mouthOpen + this.talk * 0.55 + this._mouthPulse * 0.25) * 70;
+    const smile = this.s.mouthCurve * 90; // + = happy (U), - = sad (∩)
+    const x0 = cx - mw,
+      x1 = cx + mw;
+    const upper = my - open + smile * 0.35;
+    const lower = my + open + smile;
+    const d =
+      `M ${x0} ${my} Q ${cx} ${upper} ${x1} ${my} ` +
+      `Q ${cx} ${lower} ${x0} ${my} Z`;
+    this.mouth.setAttribute("d", d);
+    // Inner mouth always solid (same color as the lip lines), in every phase.
+    this.mouth.setAttribute("fill", "var(--face)");
   }
 }
 
