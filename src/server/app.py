@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import struct
 import subprocess
 import tempfile
@@ -42,9 +43,12 @@ from urllib.parse import parse_qs, urlparse
 from ..config import config
 from ..latency import Timings
 from ..llm import get_llm
-from ..orchestrator import Event, Orchestrator
+from ..orchestrator import AudioSink, Event, Orchestrator
 from ..stt import get_stt
+from ..stt.streaming import SttEvent, StreamingSTT
 from ..tts import get_tts
+
+log = logging.getLogger("robot.server")
 
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _STATIC = Path(__file__).resolve().parent / "static"
@@ -63,6 +67,11 @@ class Hub:
         self._stt = None
         self._build_lock = threading.Lock()
         self._turn_lock = threading.Lock()  # one turn at a time (single robot)
+        # Conversation mode (ADR 0003): per-client streaming STT + stop-words.
+        self._streams: dict["Client", StreamingSTT] = {}
+        self._stop_words = [w.strip().lower() for w in config.stop_words.split(",") if w.strip()]
+        self._turn_thread: threading.Thread | None = None
+        self._barge_pending = False  # set when a client signals a real barge-in
 
     # -- clients ---------------------------------------------------------
 
@@ -80,6 +89,122 @@ class Hub:
             clients = list(self._clients)
         for c in clients:
             c.send(msg)
+
+    # -- conversation mode: continuous mic + VAD (ADR 0003) -------------
+
+    def _looks_like_stop(self, text: str) -> bool:
+        t = " " + text.lower().strip(" .,!?;:“”\"'") + " "
+        return any((" " + w + " ") in t or t.strip() == w for w in self._stop_words)
+
+    def start_stream(self, client: "Client") -> None:
+        """Begin a continuous-mic STT stream for this client."""
+        self._ensure_stt()
+
+        def sink(ev: SttEvent) -> None:
+            self._on_stt_event(client, ev)
+
+        with self._build_lock:
+            old = self._streams.pop(client, None)
+        if old is not None:
+            old.close()
+        stream = StreamingSTT(self._stt, sink)
+        with self._build_lock:
+            self._streams[client] = stream
+        self.broadcast(Event("phase", {"phase": "listening"}))
+
+    def stop_stream(self, client: "Client") -> None:
+        with self._build_lock:
+            stream = self._streams.pop(client, None)
+        if stream is not None:
+            stream.close()
+
+    def feed_audio(self, client: "Client", pcm: bytes) -> None:
+        with self._build_lock:
+            stream = self._streams.get(client)
+        if stream is not None:
+            stream.feed(pcm)
+
+    def _on_stt_event(self, client: "Client", ev: SttEvent) -> None:
+        orch = self.orchestrator()
+        if ev.type == "speech_start":
+            self.broadcast(Event("phase", {"phase": "hearing"}))
+            return
+        if ev.type == "interim":
+            self.broadcast(Event("interim", {"text": ev.text}))
+            log.info("STT …  %r", ev.text)
+            # Stop-word while the robot is mid-turn -> abort immediately.
+            if orch.phase.value in ("thinking", "speaking") and self._looks_like_stop(ev.text):
+                log.info("stop-word interim -> cancel")
+                orch.cancel()
+            return
+        if ev.type == "speech_drop":
+            log.info("STT speech dropped (too short / no text)")
+            if orch.phase.value not in ("thinking", "speaking"):
+                self.broadcast(Event("phase", {"phase": "listening"}))
+            return
+        if ev.type == "final":
+            if not ev.text:
+                return
+            log.info("STT ◀  %r", ev.text)
+            if self._looks_like_stop(ev.text):
+                log.info("stop-word final -> cancel + listen")
+                self._barge_pending = False
+                orch.cancel()
+                self.broadcast(Event("phase", {"phase": "listening"}))
+                return
+            # If the robot is mid-turn, only honour this as a barge-in turn when
+            # the client explicitly signalled one. Otherwise it is almost
+            # certainly the robot's own voice echoing back into the mic -- drop
+            # it so the robot does not talk to itself.
+            if orch.phase.value in ("thinking", "speaking"):
+                if not self._barge_pending:
+                    log.info("ignoring final during %s (no barge signal; echo?)",
+                             orch.phase.value)
+                    return
+                log.info("barge-in turn: %r", ev.text)
+                self._barge_pending = False
+                orch.cancel()
+            self._start_turn(client, ev.text)
+
+    def _start_turn(self, client: "Client", text: str) -> None:
+        def run() -> None:
+            # The just-cancelled turn may still be releasing the lock; wait
+            # briefly rather than dropping a barge-in utterance.
+            if not self._turn_lock.acquire(timeout=2.0):
+                return
+            try:
+                # Pause this client's VAD intake while the robot speaks so its
+                # own TTS doesn't echo back as speech; the client-side barge-in
+                # detector re-enables streaming when the user truly interrupts.
+                self.broadcast(Event("heard_text", {"text": text}))
+                t = Timings()
+                sink = AudioSink(
+                    on_start=lambda sr: self._pcm_start(client, sr),
+                    on_pcm=lambda b: client.send_binary(b),
+                    on_done=lambda: client.send(json.dumps({"type": "tts_done"})),
+                )
+                self.orchestrator().respond(text, t, play=False, audio_sink=sink)
+            except Exception as exc:  # noqa: BLE001
+                self.broadcast(Event("error", {"message": str(exc)}))
+            finally:
+                self._turn_lock.release()
+
+        self._turn_thread = threading.Thread(target=run, name="turn", daemon=True)
+        self._turn_thread.start()
+
+    def _pcm_start(self, client: "Client", sample_rate: int) -> None:
+        client.send(json.dumps({"type": "tts_start", "sample_rate": sample_rate}))
+
+    def barge_in(self, client: "Client") -> None:
+        """Client detected the user talking over the robot: abort + listen."""
+        log.info("barge-in signalled by client -> cancel")
+        self._barge_pending = True
+        self.orchestrator().cancel()
+        self.broadcast(Event("phase", {"phase": "hearing"}))
+
+    def abort(self, client: "Client") -> None:
+        self.orchestrator().cancel()
+        self.broadcast(Event("phase", {"phase": "listening"}))
 
     # -- orchestrator ----------------------------------------------------
 
@@ -173,8 +298,15 @@ def _ws_accept_key(key: str) -> str:
 
 
 def _ws_send(sock, message: str) -> None:
-    data = message.encode("utf-8")
-    header = bytearray([0x81])  # FIN + text
+    _ws_send_frame(sock, 0x1, message.encode("utf-8"))
+
+
+def _ws_send_binary(sock, data: bytes) -> None:
+    _ws_send_frame(sock, 0x2, data)
+
+
+def _ws_send_frame(sock, opcode: int, data: bytes) -> None:
+    header = bytearray([0x80 | opcode])  # FIN + opcode
     n = len(data)
     if n < 126:
         header.append(n)
@@ -227,6 +359,13 @@ class Client:
         with self._lock:
             try:
                 _ws_send(self.sock, message)
+            except OSError:
+                pass
+
+    def send_binary(self, data: bytes) -> None:
+        with self._lock:
+            try:
+                _ws_send_binary(self.sock, data)
             except OSError:
                 pass
 
@@ -296,6 +435,8 @@ class Handler(BaseHTTPRequestHandler):
             "llm_model": config.llm_model,
             "tts_backend": config.tts_backend,
             "tts_streaming": config.tts_streaming,
+            "conversation_mode": config.conversation_mode,
+            "conv_sample_rate": config.conv_sample_rate,
         }
 
     # -- WebSocket -------------------------------------------------------
@@ -315,6 +456,7 @@ class Handler(BaseHTTPRequestHandler):
         client.send(json.dumps({"type": "ready", **self._config_dict()}))
 
         audio_buf = bytearray()
+        streaming_pcm = False
         try:
             while True:
                 frame = _ws_read_frame(self.rfile)
@@ -325,8 +467,12 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 if opcode in (0x9, 0xA):  # ping/pong
                     continue
-                if opcode == 0x2 or (opcode == 0x0 and audio_buf is not None):
-                    audio_buf += payload  # binary (audio), possibly fragmented
+                if opcode == 0x2 or (opcode == 0x0 and not streaming_pcm and audio_buf is not None):
+                    if streaming_pcm:
+                        # Conversation mode: raw PCM16 frames -> per-client VAD.
+                        HUB.feed_audio(client, bytes(payload))
+                        continue
+                    audio_buf += payload  # legacy webm blob, possibly fragmented
                     if fin:
                         blob = bytes(audio_buf)
                         audio_buf = bytearray()
@@ -338,10 +484,20 @@ class Handler(BaseHTTPRequestHandler):
                         msg = json.loads(payload.decode("utf-8"))
                     except ValueError:
                         continue
+                    mtype = msg.get("type")
+                    if mtype == "audio_start":
+                        streaming_pcm = True
+                        HUB.start_stream(client)
+                        continue
+                    if mtype == "audio_stop":
+                        streaming_pcm = False
+                        HUB.stop_stream(client)
+                        continue
                     self._dispatch(client, msg)
         except OSError:
             pass
         finally:
+            HUB.stop_stream(client)
             HUB.remove(client)
 
     def _dispatch(self, client: Client, msg: dict):
@@ -349,6 +505,10 @@ class Handler(BaseHTTPRequestHandler):
         if mtype == "prompt":
             threading.Thread(target=HUB.run_prompt, args=(msg.get("text", ""),),
                              daemon=True).start()
+        elif mtype == "barge_in":
+            HUB.barge_in(client)
+        elif mtype == "abort":
+            HUB.abort(client)
         elif mtype == "ping":
             client.send(json.dumps({"type": "pong"}))
 

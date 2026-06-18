@@ -16,11 +16,13 @@ const promptEl = document.getElementById("prompt");
 
 let ws, wsReady = false, reconnectT = null;
 let botText = "";
+let convMode = false;
+let conv = null;
 // "thinking" timer: from STT text (or a typed prompt) until the first sound
 // actually plays -- the wait the user perceives.
 let thinkAnchor = 0, thinkShown = false, lastThink = 0;
 
-function setPhase(p) { phaseEl.textContent = p; phaseEl.dataset.p = p; face.setPhase(p); }
+function setPhase(p) { phaseEl.textContent = p; phaseEl.dataset.p = p; face.setPhase(p); if (conv) conv.setServerPhase(p); }
 
 function connect() {
   const wsScheme = location.protocol === "https:" ? "wss" : "ws";
@@ -30,6 +32,7 @@ function connect() {
   ws.onclose = () => { wsReady = false; scheduleReconnect(); };
   ws.onerror = () => { try { ws.close(); } catch (e) {} };
   ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) { if (conv) conv.onPcm(e.data); return; }
     let m; try { m = JSON.parse(e.data); } catch (_) { return; }
     handle(m);
   };
@@ -43,6 +46,8 @@ function handle(m) {
   switch (m.type) {
     case "ready":
       cfgEl.textContent = `${m.llm_model || ""} · tts:${m.tts_backend || ""}`;
+      convMode = !!m.conversation_mode;
+      setupConversationUi();
       break;
     case "phase":
       setPhase(m.phase);
@@ -53,11 +58,29 @@ function handle(m) {
       // start the thinking clock the moment STT has produced text
       thinkAnchor = performance.now(); thinkShown = false; lastThink = 0;
       break;
+    case "interim":
+      capEl.textContent = m.text ? `“${m.text}”…` : "…";
+      break;
     case "assistant_delta":
       botText += m.text; capEl.textContent = botText;
       break;
+    case "assistant_speak":
+      // first audio about to stream; mark think->speak latency
+      if (!thinkShown && thinkAnchor) {
+        lastThink = Math.round(performance.now() - thinkAnchor);
+        thinkShown = true;
+        latEl.innerHTML = `🤔 think→speak <b>${lastThink}ms</b>`;
+        latEl.classList.add("on");
+      }
+      break;
     case "assistant_end":
       botText = m.text || botText; capEl.textContent = botText;
+      break;
+    case "tts_start":
+      if (conv) conv.onTtsStart(m.sample_rate);
+      break;
+    case "tts_done":
+      if (conv) conv.onTtsDone();
       break;
     case "tts_audio":
       playAudio(m.wav_path);
@@ -131,6 +154,38 @@ function sendPrompt() {
 document.getElementById("send").addEventListener("click", sendPrompt);
 promptEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendPrompt(); });
 
+/* ---- hands-free conversation (ADR 0003) ---- */
+function send(obj) { if (wsReady) ws.send(JSON.stringify(obj)); }
+function sendBinary(buf) { if (wsReady) ws.send(buf); }
+
+function setupConversationUi() {
+  if (!convMode) return;
+  micBtn.title = "Gespräch starten/stoppen";
+  micBtn.textContent = "🗣️";
+}
+
+async function toggleConversation() {
+  if (!conv) {
+    conv = new Conversation({
+      send, sendBinary,
+      onTalking: (on) => face.setTalking(on),
+    });
+  }
+  if (conv.isActive()) {
+    conv.stop();
+    micBtn.classList.remove("rec");
+    setPhase("inactive");
+    return;
+  }
+  const res = await conv.start();
+  if (res !== true) {
+    const msg = mediaError("\uD83C\uDFA4 mic", res);
+    flash(capEl, msg); return;
+  }
+  micBtn.classList.add("rec");
+  setPhase("listening");
+}
+
 /* ---- push-to-talk mic ---- */
 let mediaRec = null, micChunks = [], micStream = null;
 const micBtn = document.getElementById("mic");
@@ -163,6 +218,7 @@ function mediaError(kind, e) {
 }
 
 async function toggleMic() {
+  if (convMode) { await toggleConversation(); return; }
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     const msg = mediaError("\uD83C\uDFA4 mic", null);

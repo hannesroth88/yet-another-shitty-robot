@@ -30,7 +30,12 @@ from .latency import Timings
 from .llm import LLM
 from .stt import STT
 from .tts import TTS
-from .tts.streaming import AudioSegment, SentenceStreamingTTS, get_streaming_tts
+from .tts.streaming import (
+    AudioSegment,
+    SentenceStreamingTTS,
+    get_streaming_tts,
+    iter_sentence_pcm,
+)
 
 log = logging.getLogger("robot.turn")
 
@@ -38,9 +43,25 @@ log = logging.getLogger("robot.turn")
 class Phase(str, Enum):
     INACTIVE = "inactive"
     LISTENING = "listening"
+    HEARING = "hearing"
     THINKING = "thinking"
     SPEAKING = "speaking"
     ERROR = "error"
+
+
+@dataclass
+class AudioSink:
+    """Streaming-PCM output target (ADR 0003, Phase B).
+
+    When passed to :meth:`Orchestrator.respond`, TTS is streamed to these
+    callbacks as raw PCM16LE frames instead of emitting ``tts_audio`` WAV-file
+    events. The control server wires these to binary WebSocket frames so the
+    phone plays them with the Web Audio API.
+    """
+
+    on_start: Callable[[int], None]  # (sample_rate)
+    on_pcm: Callable[[bytes], None]  # one PCM16LE frame
+    on_done: Callable[[], None]
 
 
 @dataclass
@@ -72,6 +93,7 @@ class Orchestrator:
         self._subs: list[Subscriber] = []
         self._lock = threading.Lock()
         self.phase = Phase.INACTIVE
+        self._cancel = threading.Event()
 
     # -- pub/sub ---------------------------------------------------------
 
@@ -102,15 +124,27 @@ class Orchestrator:
         self._emit("heard_text", text=text)
         return text
 
+    # -- cancellation (barge-in / stop-word) ----------------------------
+
+    def cancel(self) -> None:
+        """Cooperatively abort the in-flight turn (barge-in / stop-word).
+
+        Sets a flag the LLM producer and TTS consumer loops check; no thread is
+        killed. Safe to call from another thread (the WS reader).
+        """
+        self._cancel.set()
+
     # -- LLM + TTS (overlapped) -----------------------------------------
 
-    def respond(self, user_text: str, t: Timings, play: bool = True) -> str:
+    def respond(self, user_text: str, t: Timings, play: bool = True,
+                audio_sink: Optional[AudioSink] = None) -> str:
         """Stream the LLM reply while speaking sentences as they form.
 
         Returns the full reply text. Records into ``t``:
         ``llm`` / ``tts`` stages, ``llm_first_token`` and ``first_audio`` info.
         """
         self.history.append({"role": "user", "content": user_text})
+        self._cancel.clear()
         self._set_phase(Phase.THINKING)
 
         turn_start = time.perf_counter()
@@ -128,6 +162,8 @@ class Orchestrator:
             start = time.perf_counter()
             try:
                 for chunk in self.llm.stream(self.history):
+                    if self._cancel.is_set():
+                        break
                     if llm_first_token_ms is None:
                         llm_first_token_ms = (time.perf_counter() - start) * 1000.0
                     reply_parts.append(chunk)
@@ -146,22 +182,45 @@ class Orchestrator:
         producer = threading.Thread(target=produce, name="llm-producer", daemon=True)
         producer.start()
 
-        # Consumer: synthesize + (optionally) play each sentence as it arrives.
+        # Consumer: synthesize + stream/play each sentence as it arrives.
         first_audio_ms: Optional[float] = None
         tts_ms = 0.0
         spoke = False
         seg_n = 0
+        started_sink = False
+        sink_sr = 0
         adapter = self.streaming_tts
         while True:
             sentence = sentences.get()
             if sentence is None:
                 break
+            if self._cancel.is_set():
+                continue  # drain to the sentinel, synthesize nothing
             if not sentence.strip():
                 continue
             if not spoke:
                 self._set_phase(Phase.SPEAKING)
                 spoke = True
             seg_n += 1
+
+            if audio_sink is not None:
+                # Stream raw PCM frames to the phone (Phase B).
+                sr, frames, synth_ms = iter_sentence_pcm(
+                    self.tts, sentence, config.tts_pcm_frame_ms)
+                tts_ms += synth_ms
+                if not started_sink:
+                    sink_sr = sr
+                    audio_sink.on_start(sr)
+                    started_sink = True
+                self._emit("assistant_speak", text=sentence)
+                for frame in frames:
+                    if self._cancel.is_set():
+                        break
+                    if first_audio_ms is None:
+                        first_audio_ms = (time.perf_counter() - turn_start) * 1000.0
+                    audio_sink.on_pcm(frame)
+                continue
+
             seg = self._synth_segment(adapter, sentence, seg_n)
             tts_ms += seg.synth_ms
             if first_audio_ms is None:
@@ -171,13 +230,24 @@ class Orchestrator:
             if play and self.player is not None:
                 self.player(seg.wav_path)
 
+        if audio_sink is not None and started_sink:
+            audio_sink.on_done()
+
         producer.join()
-        if llm_error:
+        cancelled = self._cancel.is_set()
+        if llm_error and not cancelled:
             self._set_phase(Phase.ERROR)
             self._emit("error", message=str(llm_error[0]))
             raise llm_error[0]
 
         reply = "".join(reply_parts).strip()
+        if cancelled:
+            # Keep the partial reply in history so context stays coherent.
+            if reply:
+                self.history.append({"role": "assistant", "content": reply})
+            log.info("LLM  ▶  (cancelled) %r", reply)
+            self._emit("assistant_end", text=reply, cancelled=True)
+            return reply
         self.history.append({"role": "assistant", "content": reply})
         log.info("LLM  ▶  %r  (%.0fms, first token %.0fms)",
                  reply, llm_ms, llm_first_token_ms or llm_ms)
@@ -191,7 +261,7 @@ class Orchestrator:
         self._emit("assistant_end", text=reply)
         self._emit("latency", stages=dict(t.stages), info=dict(t.info),
                    total=round(t.total()))
-        self._set_phase(Phase.INACTIVE)
+        self._set_phase(Phase.LISTENING if audio_sink is not None else Phase.INACTIVE)
         return reply
 
     def _synth_segment(self, adapter, sentence: str, n: int) -> AudioSegment:

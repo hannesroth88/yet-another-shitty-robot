@@ -135,3 +135,45 @@ class Qwen3MlxTTS:
         )
         samples, sr = _collect_audio(results)
         _write_wav(out_path, samples, sr)
+
+    def stream_pcm(self, text: str):
+        """Yield real-time PCM16LE frames as the model generates them (ADR 0003).
+
+        Returns ``(sample_rate, frame_iterator)``. Unlike :meth:`synthesize`,
+        this does *not* wrap ``model.generate`` in ``list(...)`` -- each codec
+        chunk is converted to PCM and yielded immediately, so the phone can
+        start playing the first syllables before the sentence is fully
+        synthesized.
+        """
+        ref_audio = (config.qwen3_ref_audio or "").strip()
+        if not ref_audio:
+            raise ValueError("qwen3-mlx backend requires QWEN3_REF_AUDIO")
+        if not Path(ref_audio).exists():
+            raise FileNotFoundError(f"QWEN3_REF_AUDIO not found: {ref_audio}")
+        ref_text = _resolve_ref_text(ref_audio)
+        lang = (config.qwen3_language or "auto").strip() or "auto"
+        model = _get_model()
+        sr_box = {"sr": 24000}
+
+        def _frames():
+            for item in model.generate(
+                text=text, ref_audio=ref_audio, ref_text=ref_text,
+                lang_code=lang.lower(),
+            ):
+                audio = getattr(item, "audio", item)
+                sr_box["sr"] = int(getattr(item, "sample_rate", sr_box["sr"]) or sr_box["sr"])
+                samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+                yield np.clip(samples * 32768.0, -32768, 32767).astype("<i2").tobytes()
+
+        # Peek the first frame so the sample rate is known before we return it.
+        gen = _frames()
+        try:
+            first = next(gen)
+        except StopIteration:
+            return sr_box["sr"], iter(())
+
+        def _chained():
+            yield first
+            yield from gen
+
+        return sr_box["sr"], _chained()
