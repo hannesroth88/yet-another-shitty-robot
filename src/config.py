@@ -137,14 +137,27 @@ class Config:
     conversation_mode: bool = _get("CONVERSATION_MODE", "1") not in ("0", "false", "no", "")
     conv_sample_rate: int = int(_get("CONV_SAMPLE_RATE", "16000"))
     # VAD gate (energy default; silero opt-in).
-    vad_backend: str = _get("VAD_BACKEND", "energy")  # energy | silero
+    vad_backend: str = _get("VAD_BACKEND", "silero")  # silero | energy
     vad_frame_ms: int = int(_get("VAD_FRAME_MS", "32"))
-    vad_threshold: float = float(_get("VAD_THRESHOLD", "0.012"))  # RMS (energy backend)
-    vad_start_frames: int = int(_get("VAD_START_FRAMES", "3"))
+    # Hard RMS floor (energy backend).  Raised from 0.012 → 0.02 to cut more
+    # background noise; combine with VAD_SNR_RATIO for adaptive gating.
+    vad_threshold: float = float(_get("VAD_THRESHOLD", "0.02"))
+    # Relative gate: frame must be at least this many times louder than the
+    # estimated noise floor to count as speech (energy backend only).
+    vad_snr_ratio: float = float(_get("VAD_SNR_RATIO", "2.5"))
+    # Require this many consecutive speech frames before opening an utterance.
+    # Raised from 3 → 4 to suppress short noise bursts (~130 ms at 32 ms/frame).
+    vad_start_frames: int = int(_get("VAD_START_FRAMES", "4"))
     vad_min_silence_ms: int = int(_get("VAD_MIN_SILENCE_MS", "800"))
+    # Utterances shorter than this (ms) are silently dropped as noise, even if
+    # VAD opened.  300 ms ≈ the shortest meaningful German syllable.
+    vad_min_speech_ms: int = int(_get("VAD_MIN_SPEECH_MS", "300"))
     vad_preroll_ms: int = int(_get("VAD_PREROLL_MS", "300"))
     vad_max_utterance_ms: int = int(_get("VAD_MAX_UTTERANCE_MS", "15000"))
     vad_silero_model: str = _get("VAD_SILERO_MODEL", "voices/silero_vad.onnx")
+    # Silero speech probability threshold (0–1). 0.5 is the standard default;
+    # raise to 0.6–0.7 to be more conservative in noisy environments.
+    vad_silero_threshold: float = float(_get("VAD_SILERO_THRESHOLD", "0.5"))
     # Interim transcripts (drive stop-words / barge-in while the user speaks).
     interim_interval_ms: int = int(_get("INTERIM_INTERVAL_MS", "250"))
     interim_window_ms: int = int(_get("INTERIM_WINDOW_MS", "4000"))

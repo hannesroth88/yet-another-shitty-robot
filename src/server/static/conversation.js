@@ -165,7 +165,13 @@ class Conversation {
     const serverBusy = this.serverPhase === "thinking" || this.serverPhase === "speaking";
     const busy = playing || inTail || serverBusy;
 
-    const barge = this.detector.observeMic(input, rate, pcm, busy ? "speaking" : this.serverPhase);
+    // Pass the real server phase so the barge-in detector can apply the
+    // right threshold.  Only map to "speaking" when audio is actually
+    // playing or in the acoustic tail (reference exists); during "thinking"
+    // (LLM generating, no TTS yet) keep the actual "thinking" label so the
+    // detector uses the higher RMS-only gate instead of the correlation path.
+    const bargePhase = (playing || inTail) ? "speaking" : this.serverPhase;
+    const barge = this.detector.observeMic(input, rate, pcm, bargePhase);
     if (barge.triggered) {
       this._stopPlayback();
       this._lastPlayingAt = 0;

@@ -178,6 +178,10 @@ class StreamingSTT:
         index = self._index
         dur = audio.size / self._sr
         self._reset_utterance()
+        # Drop utterances that are too short to be real speech (noise burst).
+        if dur * 1000.0 < config.vad_min_speech_ms:
+            self._sink(SttEvent("speech_drop", index, duration=dur))
+            return
         text = self._transcribe(audio)
         if text:
             self._sink(SttEvent("final", index, text=text, duration=dur))

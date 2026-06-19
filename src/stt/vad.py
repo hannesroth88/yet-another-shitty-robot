@@ -6,8 +6,12 @@ a push-to-talk button.
 
 Two backends behind one tiny interface (``is_speech(frame_int16) -> bool``):
 
-* ``energy`` (default, **zero new deps**): RMS threshold. Crude but works for a
-  close-talking phone mic and adds nothing to install.
+* ``energy`` (default, **zero new deps**): Adaptive RMS-threshold VAD.  It
+  maintains a slowly-updated noise-floor estimate (EWMA over silent frames) and
+  fires only when the current frame's RMS is ``vad_snr_ratio`` × above that
+  floor *and* above the hard minimum ``vad_threshold``.  This makes it
+  significantly more robust to varying ambient-noise levels than a bare fixed
+  threshold.
 * ``silero`` (opt-in, ``VAD_BACKEND=silero``): the Silero VAD ONNX model via
   ``onnxruntime`` -- far more robust to background noise. Falls back to energy
   with a logged warning if the model/onnxruntime is unavailable.
@@ -27,61 +31,88 @@ log = logging.getLogger("robot.vad")
 
 
 class EnergyVad:
-    """RMS-threshold VAD. ``frame`` is float32 in [-1, 1]."""
+    """Adaptive RMS-threshold VAD.
 
-    def __init__(self, threshold: float) -> None:
+    Maintains a noise-floor estimate via an exponential moving average (EWMA)
+    over frames classified as silent.  A frame is declared speech when its RMS
+    exceeds *both*:
+
+    * the hard minimum ``threshold`` (absolute floor, prevents spurious triggers
+      in a perfectly quiet room where the noise-floor EWMA is near zero), and
+    * ``snr_ratio`` × the current noise-floor estimate (relative gate, adapts
+      to varying ambient levels — fans, HVAC, traffic, etc.).
+
+    The noise floor updates only on *silent* frames so that loud speech does not
+    raise the floor and cause clipping at the end of an utterance.
+
+    ``frame`` is float32 in [-1, 1].
+    """
+
+    # EWMA time constant: how fast the noise floor adapts.
+    # ~200 frames at 32 ms each ≈ 6 seconds to track a slow noise change.
+    _ALPHA = 0.005
+
+    def __init__(self, threshold: float, snr_ratio: float = 2.5) -> None:
         self.threshold = threshold
+        self.snr_ratio = snr_ratio
+        self._noise_floor: float = threshold  # start at the hard floor
 
     def is_speech(self, frame: np.ndarray) -> bool:
         if frame.size == 0:
             return False
         rms = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
-        return rms >= self.threshold
+        adaptive_gate = max(self.threshold, self._noise_floor * self.snr_ratio)
+        is_speech = rms >= adaptive_gate
+        if not is_speech:
+            # Update noise floor only during silence so loud speech doesn't
+            # inflate the estimate and mask the end of an utterance.
+            self._noise_floor = (
+                self._ALPHA * rms + (1.0 - self._ALPHA) * self._noise_floor
+            )
+        return is_speech
 
-    def reset(self) -> None:  # noqa: D401 - stateless
+    def reset(self) -> None:
+        # Keep the learned noise floor across utterances — it reflects the
+        # room, not the utterance.
         pass
 
 
 class SileroVad:
-    """Silero VAD (ONNX). Returns per-frame speech probability >= 0.5.
+    """Silero VAD using the official ``silero-vad`` PyTorch JIT model.
 
-    Silero expects 30+ ms windows at 16 kHz; we feed it whatever frame the
-    pipeline uses (32 ms by default) and keep its recurrent state across calls.
+    The raw ONNX models shipped by the Silero repo have compatibility issues
+    with recent onnxruntime versions (near-zero probabilities for real speech).
+    The official ``silero-vad`` Python package ships a TorchScript JIT model
+    that works correctly and is the recommended inference path.
+
+    ``frame`` must be float32 in [-1, 1], exactly ``vad_frame_ms`` × sr / 1000
+    samples (512 samples = 32 ms at 16 kHz is the recommended window).
     """
 
-    def __init__(self, model_path: str, sample_rate: int) -> None:
-        import onnxruntime as ort  # lazy: optional dep
-
+    def __init__(self, sample_rate: int, threshold: float = 0.5) -> None:
+        from silero_vad import load_silero_vad  # lazy: optional dep
+        import torch as _torch
+        self._torch = _torch
         self._sr = sample_rate
-        self._sess = ort.InferenceSession(
-            model_path, providers=["CPUExecutionProvider"]
-        )
+        self._threshold = threshold
+        self._model = load_silero_vad()
         self.reset()
 
     def reset(self) -> None:
-        # Silero v4 state: (2, 1, 128). v5 uses a single 'state' input; we handle
-        # the common v4 layout and degrade gracefully if names differ.
-        self._h = np.zeros((2, 1, 128), dtype=np.float32)
-        self._c = np.zeros((2, 1, 128), dtype=np.float32)
+        self._model.reset_states()
 
     def is_speech(self, frame: np.ndarray) -> bool:
-        x = frame.astype(np.float32).reshape(1, -1)
-        sr = np.array(self._sr, dtype=np.int64)
-        try:
-            out = self._sess.run(None, {"input": x, "sr": sr, "h": self._h, "c": self._c})
-            prob, self._h, self._c = out[0], out[1], out[2]
-        except Exception:
-            # Model signature mismatch -> single-shot probability, no state.
-            out = self._sess.run(None, {"input": x, "sr": sr})
-            prob = out[0]
-        return float(np.asarray(prob).reshape(-1)[0]) >= 0.5
+        x = self._torch.from_numpy(frame.astype(np.float32))
+        with self._torch.no_grad():
+            prob = float(self._model(x, self._sr).item())
+        return prob >= self._threshold
 
 
 def make_vad(sample_rate: int):
     """Build the configured VAD, falling back to energy on any failure."""
     if config.vad_backend == "silero":
         try:
-            return SileroVad(config.vad_silero_model, sample_rate)
+            return SileroVad(sample_rate, config.vad_silero_threshold)
         except Exception as exc:  # noqa: BLE001
             log.warning("Silero VAD unavailable (%s); falling back to energy VAD", exc)
-    return EnergyVad(config.vad_threshold)
+    return EnergyVad(config.vad_threshold, config.vad_snr_ratio)

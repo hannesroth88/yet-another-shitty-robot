@@ -4,6 +4,9 @@ faster-whisper>=1.0.0
 # nothing; install piper-tts on Linux fleet hosts or use a prebuilt piper binary.
 # piper-tts>=1.2.0
 
+# Silero VAD (VAD_BACKEND=silero, now the default). Pulls in torch automatically.
+# silero-vad>=5.1
+
 # Optional: German Kokoro "Martin" TTS backend (TTS_BACKEND=kokoro)
 # kokoro-onnx
 # huggingface_hub

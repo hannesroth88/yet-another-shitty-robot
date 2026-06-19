@@ -16,6 +16,11 @@
 class BargeInDetector {
   constructor(targetSampleRate, micThreshold = 0.018, residualThreshold = 0.62, triggerFrames = 5) {
     this.micThreshold = micThreshold;
+    // During the "thinking" phase the robot has no TTS playing yet, so there
+    // is no playback reference to correlate against. Require a much higher raw
+    // RMS to fire so background noise at 0.018 can't accidentally cancel the
+    // LLM mid-generation. 0.08 ≈ deliberate loud voice, not room ambient.
+    this.thinkingMicThreshold = 0.08;
     this.residualThreshold = residualThreshold;
     this.triggerFrames = triggerFrames;
     this.streaming = false;
@@ -55,8 +60,16 @@ class BargeInDetector {
     this.appendMicBuffer(pcm);
     if (!this.shouldBufferForBargeIn(phase) || this.streaming) return { triggered: false };
     const rms = this.micRms(input);
-    const ratio = this.bargeResidualRatio(input, sampleRate);
-    const triggered = rms >= this.micThreshold && ratio >= this.residualThreshold;
+    let triggered;
+    let ratio = 0;
+    if (phase === "thinking") {
+      // No TTS reference during LLM generation: use a higher RMS-only gate so
+      // background noise (fans, HVAC, 0.018 ambient) can't fire a false cancel.
+      triggered = rms >= this.thinkingMicThreshold;
+    } else {
+      ratio = this.bargeResidualRatio(input, sampleRate);
+      triggered = rms >= this.micThreshold && ratio >= this.residualThreshold;
+    }
     this.consecutiveFrames = triggered ? this.consecutiveFrames + 1 : Math.max(0, this.consecutiveFrames - 1);
     if (this.consecutiveFrames < this.triggerFrames) return { triggered: false };
     this.streaming = true;
@@ -92,7 +105,13 @@ class BargeInDetector {
     micEnergy /= Math.max(1, input.length);
     if (micEnergy < 1e-7) return 0;
     let bestCorrelation = 0;
-    let bestRatio = 1;
+    // Bug fix: initialise to 0, not 1.  When all reference frames are silent
+    // (referenceEnergy < 1e-7 for every delay), the loop body is skipped and
+    // bestRatio must stay 0 — "I have no reference, so I can't declare a
+    // barge-in based on correlation".  The old value of 1 meant the ratio was
+    // always at maximum during the thinking phase (no TTS playing) and any mic
+    // noise above 0.018 RMS would fire a false cancel.
+    let bestRatio = 0;
     for (let delayMs = 20; delayMs <= 420; delayMs += 10) {
       const delaySamples = Math.round((delayMs / 1000) * sampleRate);
       const start = this.playbackReferenceSamples - delaySamples - input.length;
